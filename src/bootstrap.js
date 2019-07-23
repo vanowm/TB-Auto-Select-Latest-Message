@@ -3,44 +3,17 @@ const {classes: Cc, interfaces: Ci, utils: Cu} = Components,
 Cu.import("resource://gre/modules/Services.jsm");
 Cu.import("resource://gre/modules/AddonManager.jsm");
 var self = this,
-		addon = {
-				getResourceURI: function (filePath) ({
-				spec: __SCRIPT_URI_SPEC__ + "/../" + filePath
-			})
-		},
 		width = 0,
 		height = 0,
 		pref = Services.prefs.getBranch(PREF_BRANCH),
 		prefs = {
 			sel: 1,
-		};
+		},
+		log = console.log;
 
 function include(path)
 {
 	Services.scriptloader.loadSubScript(addon.getResourceURI(path).spec, self);
-}
-
-
-function dump (aMessage, obj, prefix = "")
-{
-//	return;
-	var r = "";
-	var t = typeof(aMessage);
-	if (obj && t != "string" && t != "number" && t != "bool")
-	{
-		for(var i in aMessage)
-			try
-			{
-				r = r + i + ": " + aMessage[i] + "\n";
-			}catch(e){r = r + i + ": " + e + "\n"};
-
-
-		if (r)
-			r = "\n-------------\n"+t+"\n"+r;
-	}
-	Components.classes["@mozilla.org/consoleservice;1"]
-		.getService(Components.interfaces.nsIConsoleService)
-		.logStringMessage("autoSLM: " + prefix + aMessage + r);
 }
 
 function main(window)
@@ -81,6 +54,8 @@ function main(window)
 				}
 				if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
 					window.gFolderDisplay.navigate(msgDefault, /* select */ true)
+
+				window.gFolderDisplay.tree.focus()
 			}
 		},
 
@@ -138,8 +113,9 @@ function setDefaultPrefs(prefs, prefix)
 		p = prefs;
 	}
 	let branch = Services.prefs.getDefaultBranch(PREF_BRANCH);
-	for (let [key, val] in Iterator(p))
+	for (let key in p)
 	{
+		let val = p[key];
 		switch (typeof val)
 		{
 			case "boolean":
@@ -228,7 +204,7 @@ function fixpref(window, r, s)
 			}), false);
 	}
 	else if (!s && doc.getElementById("paneGeneral"))
-		doc.getElementById("paneGeneral").addEventListener("paneload", function() fixpref(window, r, true), true);
+		doc.getElementById("paneGeneral").addEventListener("paneload", function() {fixpref(window, r, true)}, true);
 }
 function prefChange(e)
 {
@@ -237,11 +213,18 @@ function prefChange(e)
 
 function startup(data, reason)
 {
-	include("includes/utils.js");
-	setDefaultPrefs(prefs);
+	let callback = function callback(a)
+	{
+		addon = a;
+		include("includes/utils.js");
+		setDefaultPrefs(prefs);
 
-	watchWindows(main);
-	watchWindows(fixpref, "Mail:Preferences");
+		watchWindows(main);
+		watchWindows(fixpref, "Mail:Preferences");
+	};
+	let promise = AddonManager.getAddonByID(data.id, callback);
+	if (typeof(promise) == "object" && "then" in promise)
+		promise.then(callback);
 }
 
 function shutdown(data, reason)
