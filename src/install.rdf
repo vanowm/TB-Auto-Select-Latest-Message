@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?><RDF xmlns="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:em="http://www.mozilla.org/2004/em-rdf#">
 	<Description about="urn:mozilla:install-manifest">
 		<em:id>autoselectlatestmessage@vano</em:id>
-		<em:version>2.1</em:version>
+		<em:version>2.1.1a1</em:version>
 		<em:name>Auto Select Latest Message</em:name>
 		<em:description>Automatically select and display latest message on startup or when switching folder for the first time</em:description>
 		<em:type>2</em:type>

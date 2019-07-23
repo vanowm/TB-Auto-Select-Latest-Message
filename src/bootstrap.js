@@ -55,8 +55,20 @@ function main(window)
 				if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
 					window.gFolderDisplay.navigate(msgDefault, /* select */ true)
 
-				window.gFolderDisplay.tree.focus()
+					if (!this.isTextbox(window.document.activeElement))
+						window.gFolderDisplay.tree.focus();
 			}
+		},
+
+		isTextbox: function(el)
+		{
+			if (!el)
+				return false;
+
+			if (el.tagName == "textbox")
+				return true
+
+			return this.isTextbox(el.parentNode);
 		},
 
 		onMessagesLoaded: function(aAll)

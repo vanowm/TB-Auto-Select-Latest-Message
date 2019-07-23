@@ -316,17 +316,21 @@ function unload(callback, container) {
  * @usage watchWindows(callback): Apply a callback to each browser window.
  * @param [function] callback: 1-parameter function that gets a browser window.
  */
-function watchWindows(callback) {
+function watchWindows(callback, type) {
 	var unloaded = false;
+	if (typeof(type) == "undefined")
+		type = "mail:3pane";
+
 	unload(function(){unloaded = true});
 
 	// Wrap the callback in a function that ignores failures
-	function watcher(window, type) {
+	function watcher(window) {
 		try {
 			// Now that the window has loaded, only handle browser windows
 			let {documentElement} = window.document;
-			if (documentElement.getAttribute("windowtype") == "mail:3pane")
-				callback(window, type);
+//log([documentElement.getAttribute("windowtype"), type]);
+			if (documentElement.getAttribute("windowtype") == type)
+				callback(window);
 		}
 		catch(ex) {log(ex)}
 	}
@@ -337,7 +341,7 @@ function watchWindows(callback) {
 		window.addEventListener("load", function runOnce() {
 			window.removeEventListener("load", runOnce, false);
 			if (unloaded) return; // the extension has shutdown
-			watcher(window, "load");
+			watcher(window);
 		}, false);
 	}
 
