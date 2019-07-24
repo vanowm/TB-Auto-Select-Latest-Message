@@ -95,11 +95,11 @@ function disableAll(obj, r)
 	if (obj.tagName == "button" || obj.id.match(/^autoSLM/))
 		return;
 
-	if (!r && !obj.hasAttribute("backupDisabled"))
-		obj.setAttribute("backupDisabled", obj.disabled);
+	if (!r && !("___autoSLM_disabled" in obj))
+		obj.___autoSLM_disabled = obj.disabled;
 
-	if (r && obj.hasAttribute("backupDisabled"))
-		obj.disabled = obj.getAttribute("backupDisabled") == "true";
+	if (r && "___autoSLM_disabled" in obj)
+		obj.disabled = obj.___autoSLM_disabled;
 	else if (!r)
 		obj.disabled = true;
 
@@ -301,7 +301,6 @@ function fixpref(window, r, s)
 			checkbox.id = "autoSLM_checkbox";
 			checkbox.setAttribute("label", "Auto focus on messages list");
 			checkbox.setAttribute("preference", PREF_BRANCH + "focus");
-			checkbox.addEventListener("command", prefChange, true);
 			addElement(checkbox, box);
 
 			p.id = PREF_BRANCH + "sel";
