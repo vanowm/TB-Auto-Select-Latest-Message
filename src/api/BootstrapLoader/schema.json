@@ -1,0 +1,20 @@
+[
+  {
+    "namespace": "BootstrapLoader",
+    "functions": [
+      {
+        "name": "registerBootstrapScript",
+        "type": "function",
+        "description": "Register a bootstrap.js style script",
+        "async": true,
+        "parameters": [
+          {
+            "name": "aPath",
+            "type": "string",
+            "description": "Either the chrome:// path to the script or its relative location from the root of the extension,"
+          }
+        ]
+      }
+    ]
+  }
+]
