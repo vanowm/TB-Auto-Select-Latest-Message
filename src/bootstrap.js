@@ -11,7 +11,6 @@ var self = this,
 		},
 		log = console.log.bind(console);
 
-
 function include(path)
 {
 	Services.scriptloader.loadSubScript(addon.getResourceURI(path).spec, self);
@@ -147,11 +146,11 @@ function main(window)
 
 function disableAll(obj, r, s)
 {
+	if (obj.hasAttribute && obj.hasAttribute("autoSLM"))
+		return true;
+
 	if (!s && obj.hasAttribute && obj.hasAttribute("autoSLM"))
 		s = true;
-
-	if (obj.tagName == "button" || (obj.hasAttribute && obj.hasAttribute("autoSLM")))
-		return true;
 
 	if (s || typeof(r) == "undefined")
 	{
@@ -318,7 +317,7 @@ function fixpref(window, r, s)
 	{
 		function addElement(el, parent, type)
 		{
-			el.setAttribute("autoSLM", "");
+			el.setAttribute("autoSLM", '');
 			type = type || "appendChild";
 
 			if (type == "insertBefore")
@@ -331,10 +330,25 @@ function fixpref(window, r, s)
 				el.parentNode.removeChild(el);
 			}), false);
 		}
-		function prefChange()
+
+		function prefChange(e, val)
 		{
-			disableAll(startBox.parentNode.parentNode, pref.getIntPref("sel") ? true : false);
+			if (e && (e.target.id != "autoSLM" || e.attrName != "value"))
+				return;
+
+			if (e && "newValue" in e)
+				val = ~~e.newValue;
+			else
+				val = pref.getIntPref("sel");
+
+			disableAll(startBox.parentNode.parentNode, val ? true : false);
+			try
+			{
+				 doc.getElementById("autoSLM_checkbox").disabled = !val;
+			}
+			catch (e){}
 		}
+
 		if (!r && !doc.getElementById("autoSLM_box"))
 		{
 			let h = startBox.parentNode.parentNode.clientHeight,
@@ -343,14 +357,13 @@ function fixpref(window, r, s)
 					menupopup = doc.createXULElement("menupopup"),
 					menulist = doc.createXULElement("menulist"),
 					box = doc.createXULElement("hbox"),
-					menuitem = doc.createXULElement("menuitem"),
-					p = doc.createXULElement("preference");
+					menuitem = doc.createXULElement("menuitem");
 
 			menulist.id = "autoSLM";
 			menulist.setAttribute("label", "Select first unread message only");
 			menulist.setAttribute("preference", PREF_BRANCH + "sel");
-			menulist.addEventListener("command", prefChange, true);
-			menulist.setAttribute("onsyncfrompreference", "prefChange(event)");
+			menulist.addEventListener("DOMAttrModified", prefChange, false);
+			menulist.value = pref.getIntPref("sel");
 			box.setAttribute("flex", false);
 			box.id = "autoSLM_box";
 			menuitem.setAttribute("value", 0);
@@ -367,44 +380,15 @@ function fixpref(window, r, s)
 			menulist.appendChild(menupopup);
 			box.appendChild(menulist);
 
-			addElement(box, startBox.parentNode, "insertBefore");
-
 			checkbox.id = "autoSLM_checkbox";
 			checkbox.setAttribute("label", "Auto focus on messages list");
 			checkbox.setAttribute("preference", PREF_BRANCH + "focus");
-			addElement(checkbox, box);
+			box.appendChild(checkbox);
 
-			let ps = doc.getElementsByTagName("preferences");
-			if (ps.length)
-			{
-				ps = ps[0];
-			}
-			else
-			{
-				ps = doc.createXULElement("prefrences");
-				startBox.appendChild(ps);
-			}
-			addElement(p, ps);
-
-			p.id = PREF_BRANCH + "sel";
-			p.setAttribute("type", "int");
-			p.setAttribute("name", p.id);
-			addElement(p, ps);
-
-			p = doc.createXULElement("preference");
-			p.id = PREF_BRANCH + "focus";
-			p.setAttribute("type", "bool");
-			p.setAttribute("name", p.id);
-			addElement(p, ps);
+			addElement(box, startBox.parentNode, "insertBefore");
 
 			width = startBox.parentNode.parentNode.clientWidth - w;
 			height = startBox.parentNode.parentNode.clientHeight - h;
-//			window.resizeBy(width, height);
-			try
-			{
-				doc.getElementById("MailPreferences").showPane(doc.getElementById("MailPreferences").currentPane);
-			}
-			catch(e){}
 			try
 			{
 				let p = [
@@ -425,7 +409,6 @@ function fixpref(window, r, s)
 			listen(window, window, "unload", unload(function()
 			{
 				disableAll(startBox.parentNode.parentNode);
-//				window.resizeBy(-width, -height);
 			}), false);
 	}
 	else if (!s && doc.getElementById("paneGeneral"))

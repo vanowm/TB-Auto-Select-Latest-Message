@@ -3,13 +3,13 @@
   "applications": {
     "gecko": {
       "id": "autoselectlatestmessage@vano",
-      "strict_min_version": "78.0"
+      "strict_min_version": "70.0"
     }
   },
   "name": "Auto Select Latest Message",
   "author": "V@no",
   "description": "Automatically select and display latest message on startup or when switching folder for the first time",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "experiment_apis": {
     "BootstrapLoader": {
       "schema": "api/BootstrapLoader/schema.json",
@@ -18,7 +18,7 @@
         "paths": [["BootstrapLoader"]],
         "script": "api/BootstrapLoader/implementation.js"
       }
-    }
+   }
   },
   "background": {
     "scripts": [
