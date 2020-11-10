@@ -2,12 +2,10 @@ const {classes: Cc, interfaces: Ci, utils: Cu} = Components,
 			PREF_BRANCH = "extensions.autoselectlatestmessage.";
 
 var self = this,
-		width = 0,
-		height = 0,
 		pref = Services.prefs.getBranch(PREF_BRANCH),
 		prefs = {
 			sel: 1,
-			selForce: true,
+			selForce: false,
 			focus: true
 		},
 		log = console.log.bind(console);
@@ -359,7 +357,6 @@ function fixpref(window, r, s)
 	{
 		function addElement(el, parent, type)
 		{
-			el.setAttribute("autoSLM", '');
 			type = type || "appendChild";
 
 			if (type == "insertBefore")
@@ -408,6 +405,7 @@ function fixpref(window, r, s)
 					menuitem = doc.createXULElement("menuitem");
 
 			vbox.id = "autoSLM_box";
+			vbox.setAttribute("autoSLM", '');
 
 			menulist.id = "autoSLM_sel";
 			menulist.setAttribute("label", "Select first unread message only");
@@ -443,8 +441,6 @@ function fixpref(window, r, s)
 
 			addElement(vbox, startBox.parentNode, "insertBefore");
 
-			width = startBox.parentNode.parentNode.clientWidth - w;
-			height = startBox.parentNode.parentNode.clientHeight - h;
 			try
 			{
 				let p = [
@@ -510,8 +506,6 @@ function startup(data, reason)
 	let promise = AddonManager.getAddonByID(data.id, callback);
 	if (typeof(promise) == "object" && "then" in promise)
 		promise.then(callback);
-
-
 }
 
 function shutdown(data, reason)
