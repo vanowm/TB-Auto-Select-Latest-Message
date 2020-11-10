@@ -7,6 +7,7 @@ var self = this,
 		pref = Services.prefs.getBranch(PREF_BRANCH),
 		prefs = {
 			sel: 1,
+			selForce: true,
 			focus: true
 		},
 		log = console.log.bind(console);
@@ -16,6 +17,13 @@ function include(path)
 	Services.scriptloader.loadSubScript(addon.getResourceURI(path).spec, self);
 }
 
+function setTimeout(callback, time)
+{
+	let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+	timer.initWithCallback(callback, time, Ci.nsITimer.TYPE_ONE_SHOT);
+	return timer;
+}
+
 function main(window)
 {
 
@@ -23,78 +31,87 @@ function main(window)
 		return;
 
 	let document = window.document,
-			FolderDisplayListenerManager_listener = {
-
-		selectMessageDelayed: function FolderDisplayListenerManager_listener_selectMessageDelayed()
-		{
-			//the timer needed to allow time to restore previous selection if any
-			Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer).init({observe: function timer_observer()
+			listener = {
+				timer: null,
+				last: 0,
+				selectMessageDelayed: function listener_selectMessageDelayed()
 				{
-					FolderDisplayListenerManager_listener.selectMessage();
-				}
-			}, 100, Ci.nsITimer.TYPE_ONE_SHOT);
-		},
+					if (this.timer)
+						this.timer.cancel();
 
-		selectMessage: function FolderDisplayListenerManager_listener_selectMessage()
-		{
-			var sel = pref.getIntPref("sel");
-			if (!sel)
-				return;
+					//the timer needed to allow time to restore previous selection if any
+					this.timer = setTimeout(listener.selectMessage.bind(this), 0);
+				},
 
-			if (window.gFolderDisplay && window.gFolderDisplay.view.dbView && window.gFolderDisplay.view.dbView.numSelected == 0)
-			{
-				let msgDefault = (window.gFolderDisplay.view.isSortedAscending && window.gFolderDisplay.view.sortImpliesTemporalOrdering)
-									? Ci.nsMsgNavigationType.lastMessage
-									: Ci.nsMsgNavigationType.firstMessage;
-				switch(sel)
+				selectMessage: function listener_selectMessage()
 				{
-					case 1:
-							msg = msgDefault;
-					default:
-						break;
-					case 2:
-							msg = Ci.nsMsgNavigationType.firstUnreadMessage;
-						break;
+					if (!prefs.sel)
+						return;
+
+					let isTextbox = this.isTextbox(window.document.activeElement),
+							view = window.gFolderDisplay && window.gFolderDisplay.view;
+
+					if (view && view.dbView && (!view.dbView.numSelected || (view.dbView.numSelected && !isTextbox && prefs.selForce)))
+					{
+
+						let msgDefault = (view.isSortedAscending && view.sortImpliesTemporalOrdering)
+											? Ci.nsMsgNavigationType.lastMessage
+											: Ci.nsMsgNavigationType.firstMessage;
+
+						switch(prefs.sel)
+						{
+							case 1:
+									msg = msgDefault;
+							default:
+								break;
+							case 2:
+									msg = Ci.nsMsgNavigationType.firstUnreadMessage;
+								break;
+						}
+
+						if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
+							window.gFolderDisplay.navigate(msgDefault, /* select */ true)
+					}
+					if (prefs.focus && !isTextbox)
+					{
+						setTimeout(function()
+						{
+							window.gFolderDisplay.tree.focus()
+						}, 100);
+					}
+				},
+
+				isTextbox: function listener_isTextbox(el)
+				{
+					if (!el)
+						return false;
+
+					if (el.tagName && el.tagName.match(/(?:textbox|html:input)/i))
+						return true
+
+					return this.isTextbox(el.parentNode);
+				},
+
+				onMessagesLoaded: function listener_onMessagesLoaded(aAll)
+				{
+					listener.selectMessageDelayed();
+				},
+
+				onMakeActive: function listener_onMakeActive()
+				{
+					listener.selectMessageDelayed();
 				}
-				if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
-					window.gFolderDisplay.navigate(msgDefault, /* select */ true)
+	}; //listener
 
-					if (pref.getBoolPref("focus") && !this.isTextbox(window.document.activeElement))
-						window.gFolderDisplay.tree.focus()
-			}
-		},
+	window.FolderDisplayListenerManager.registerListener(listener);
 
-		isTextbox: function FolderDisplayListenerManager_listener_isTextbox(el)
-		{
-			if (!el)
-				return false;
-
-			if (el.tagName == "textbox")
-				return true
-
-			return this.isTextbox(el.parentNode);
-		},
-
-		onMessagesLoaded: function FolderDisplayListenerManager_listener_onMessagesLoaded(aAll)
-		{
-			FolderDisplayListenerManager_listener.selectMessageDelayed();
-		},
-
-		onMakeActive: function FolderDisplayListenerManager_listener_onMakeActive()
-		{
-			FolderDisplayListenerManager_listener.selectMessageDelayed();
-		},
-	}; //FolderDisplayListenerManager_listener
-	
-	window.FolderDisplayListenerManager.registerListener(FolderDisplayListenerManager_listener);
-	
 	listen(window, window, "unload", unload(function()
 	{
 		if ("FolderDisplayListenerManager" in window)
-			window.FolderDisplayListenerManager.unregisterListener(FolderDisplayListenerManager_listener)
+			window.FolderDisplayListenerManager.unregisterListener(listener)
 	}), false);
-	
-	FolderDisplayListenerManager_listener.selectMessage();
+
+//	listener.selectMessageDelayed();
 
 	let tabmail = document.getElementById("tabmail"),
 			tabMon = {
@@ -125,7 +142,7 @@ function main(window)
 		onTabClosing: function tabMan_onTabClosing(){},
 		onTabSwitched: function tabMan_onTabSwitched(tab){},
 	};
-	
+
 	if (tabmail)
 	{
 		if (tabmail.tabTypes.preferencesTab)
@@ -304,6 +321,31 @@ function setDefaultPrefs(prefs, prefix)
 	}
 	return prefs;
 }
+
+function onPrefChange(pref, aTopic, key)
+{
+	if(aTopic != "nsPref:changed" || typeof(prefs[key]) == "undefined")
+		return;
+
+	switch (pref.getPrefType(key))
+	{
+		case Ci.nsIPrefBranch.PREF_BOOL:
+			prefs[key] = pref.getBoolPref(key);
+			break;
+
+		case Ci.nsIPrefBranch.PREF_INT:
+			prefs[key] = pref.getIntPref(key);
+			break;
+
+		case Ci.nsIPrefBranch.PREF_STRING:
+			prefs[key] = prefString(pref, key);
+			break;
+		default:
+			return;
+	}
+//	Services.obs.notifyObservers(null, 'autoSLM_prefChanged', key);
+} //onPrefChange()
+
 function fixpref(window, r, s)
 {
 	let doc = window.document;
@@ -333,18 +375,23 @@ function fixpref(window, r, s)
 
 		function prefChange(e, val)
 		{
-			if (e && (e.target.id != "autoSLM" || e.attrName != "value"))
+			if (e && (e.target.id != "autoSLM_sel" || e.attrName != "value"))
 				return;
 
 			if (e && "newValue" in e)
 				val = ~~e.newValue;
 			else
-				val = pref.getIntPref("sel");
+				val = prefs.sel;
 
 			disableAll(startBox.parentNode.parentNode, val ? true : false);
 			try
 			{
-				 doc.getElementById("autoSLM_checkbox").disabled = !val;
+				doc.getElementById("autoSLM_focus").disabled = !val;
+			}
+			catch (e){}
+			try
+			{
+				doc.getElementById("autoSLM_selForce").disabled = !val;
 			}
 			catch (e){}
 		}
@@ -356,16 +403,18 @@ function fixpref(window, r, s)
 					checkbox = doc.createXULElement("checkbox"),
 					menupopup = doc.createXULElement("menupopup"),
 					menulist = doc.createXULElement("menulist"),
-					box = doc.createXULElement("hbox"),
+					vbox = doc.createXULElement("vbox"),
+					hbox = doc.createXULElement("hbox"),
 					menuitem = doc.createXULElement("menuitem");
 
-			menulist.id = "autoSLM";
+			vbox.id = "autoSLM_box";
+
+			menulist.id = "autoSLM_sel";
 			menulist.setAttribute("label", "Select first unread message only");
 			menulist.setAttribute("preference", PREF_BRANCH + "sel");
 			menulist.addEventListener("DOMAttrModified", prefChange, false);
-			menulist.value = pref.getIntPref("sel");
-			box.setAttribute("flex", false);
-			box.id = "autoSLM_box";
+			menulist.value = prefs.sel;
+			hbox.setAttribute("flex", false);
 			menuitem.setAttribute("value", 0);
 			menuitem.setAttribute("label", "Default");
 			menupopup.appendChild(menuitem);
@@ -378,14 +427,21 @@ function fixpref(window, r, s)
 			menuitem.setAttribute("label", "First unread message");
 			menupopup.appendChild(menuitem);
 			menulist.appendChild(menupopup);
-			box.appendChild(menulist);
+			hbox.appendChild(menulist);
 
-			checkbox.id = "autoSLM_checkbox";
+			checkbox.id = "autoSLM_selForce";
+			checkbox.setAttribute("label", "Force");
+			checkbox.setAttribute("tooltiptext", "TB remembers last selected message, force it to forget");
+			checkbox.setAttribute("preference", PREF_BRANCH + "selForce");
+			hbox.appendChild(checkbox);
+			vbox.appendChild(hbox);
+			checkbox = doc.createXULElement("checkbox");
+			checkbox.id = "autoSLM_focus";
 			checkbox.setAttribute("label", "Auto focus on messages list");
 			checkbox.setAttribute("preference", PREF_BRANCH + "focus");
-			box.appendChild(checkbox);
+			vbox.appendChild(checkbox);
 
-			addElement(box, startBox.parentNode, "insertBefore");
+			addElement(vbox, startBox.parentNode, "insertBefore");
 
 			width = startBox.parentNode.parentNode.clientWidth - w;
 			height = startBox.parentNode.parentNode.clientHeight - h;
@@ -393,6 +449,7 @@ function fixpref(window, r, s)
 			{
 				let p = [
 					{ id: "extensions.autoselectlatestmessage.sel", type: "int" },
+					{ id: "extensions.autoselectlatestmessage.selForce", type: "bool" },
 					{ id: "extensions.autoselectlatestmessage.focus", type: "bool" },
 				];
 				window.Preferences.addAll(p);
@@ -414,6 +471,24 @@ function fixpref(window, r, s)
 	else if (!s && doc.getElementById("paneGeneral"))
 		listen(window, doc.getElementById("paneGeneral"), "paneload", function() {fixpref(window, r, true)}, true);
 
+/*
+	function prefChanged(aSubject, aTopic, aData)
+	{
+		if (aTopic != "autoSLM_prefChanged")
+				return;
+
+log(prefs[aData], arguments);
+	}
+
+	Services.obs.addObserver(prefChanged, "autoSLM_prefChanged", false);
+	let u = function()
+	{
+log("unloaded");
+		Services.obs.removeObserver(prefChanged, "autoSLM_prefChanged", false);
+	}
+	listen(window, window, "unload", u);
+	unload(u);
+*/
 } //fixpref()
 
 function startup(data, reason)
@@ -426,10 +501,17 @@ function startup(data, reason)
 
 		watchWindows(main);
 		watchWindows(fixpref, "Mail:Preferences");
+		pref.QueryInterface(Ci.nsIPrefBranch).addObserver('', onPrefChange, false);
+		unload(function()
+		{
+			pref.QueryInterface(Ci.nsIPrefBranch).removeObserver('', onPrefChange, false);
+		});
 	};
 	let promise = AddonManager.getAddonByID(data.id, callback);
 	if (typeof(promise) == "object" && "then" in promise)
 		promise.then(callback);
+
+
 }
 
 function shutdown(data, reason)
