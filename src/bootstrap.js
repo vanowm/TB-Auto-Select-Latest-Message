@@ -15,13 +15,6 @@ function include(path)
 	Services.scriptloader.loadSubScript(addon.getResourceURI(path).spec, self);
 }
 
-function setTimeout(callback, time)
-{
-	let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-	timer.initWithCallback(callback, time, Ci.nsITimer.TYPE_ONE_SHOT);
-	return timer;
-}
-
 function main(window)
 {
 
@@ -29,32 +22,44 @@ function main(window)
 		return;
 
 	let document = window.document,
-			listener = {
+			listener =
+			{
 				timer: null,
 				last: 0,
+				onMessagesLoaded: function listener_onMessagesLoaded(aAll)
+				{
+					listener.selectMessageDelayed.apply(this, arguments);
+				},
+
+				onMakeActive: function listener_onMakeActive()
+				{
+					listener.selectMessageDelayed.apply(this, arguments);
+				},
+
 				selectMessageDelayed: function listener_selectMessageDelayed()
 				{
 					if (this.timer)
 						this.timer.cancel();
 
+					let that = this,
+							args = arguments;
 					//the timer needed to allow time to restore previous selection if any
-					this.timer = setTimeout(listener.selectMessage.bind(this), 0);
+					this.timer = setTimeout(function(){listener.selectMessage.apply(that, args)}, 0);
 				},
 
-				selectMessage: function listener_selectMessage()
+				selectMessage: function listener_selectMessage(obj)
 				{
 					if (!prefs.sel)
 						return;
 
-					let isTextbox = this.isTextbox(window.document.activeElement),
-							view = window.gFolderDisplay && window.gFolderDisplay.view;
+					let isTextbox = this.isTextbox(window.document.activeElement);
 
-					if (view && view.dbView && (!view.dbView.numSelected || (view.dbView.numSelected && !isTextbox && prefs.selForce)))
+					if (obj.view.dbView && (!obj.view.dbView.numSelected || (obj.view.dbView.numSelected && !isTextbox && prefs.selForce)))
 					{
 
-						let msgDefault = (view.isSortedAscending && view.sortImpliesTemporalOrdering)
-											? Ci.nsMsgNavigationType.lastMessage
-											: Ci.nsMsgNavigationType.firstMessage;
+						let msgDefault = (obj.view.isSortedAscending && obj.view.sortImpliesTemporalOrdering)
+															? Ci.nsMsgNavigationType.lastMessage
+															: Ci.nsMsgNavigationType.firstMessage;
 
 						switch(prefs.sel)
 						{
@@ -74,7 +79,7 @@ function main(window)
 					{
 						setTimeout(function()
 						{
-							window.gFolderDisplay.tree.focus()
+							obj.tree.focus()
 						}, 100);
 					}
 				},
@@ -88,58 +93,46 @@ function main(window)
 						return true
 
 					return this.isTextbox(el.parentNode);
-				},
-
-				onMessagesLoaded: function listener_onMessagesLoaded(aAll)
-				{
-					listener.selectMessageDelayed();
-				},
-
-				onMakeActive: function listener_onMakeActive()
-				{
-					listener.selectMessageDelayed();
 				}
-	}; //listener
+			}, //listener
+
+			tabmail = document.getElementById("tabmail"),
+			tabMon =
+			{
+				monitorName: "aslmTabmon",
+				onTabOpened: function tabMan_onTabOpened(tab, aFirstTab, aOldTab)
+				{
+					if (tab.mode.name != "preferencesTab")
+						return;
+
+					if (tab.browser.contentWindow.___autoSLM)
+						return;
+
+					tab.browser.addEventListener("paneSelected", function runOnce (event)
+					{
+						tab.browser.removeEventListener("paneSelected", runOnce, false);
+						prefWinLoaded(tab.browser.contentWindow);
+					}, false);
+					tab.browser.contentWindow.___autoSLM = true;
+					unload(function()
+					{
+						delete tab.browser.contentWindow.___autoSLM;
+					});
+
+				},
+				onTabTitleChanged: function tabMan_onTabTitleChanged(){},
+				onTabPersist: function tabMan_onTabPersist(){},
+				onTabRestored: function tabMan_onTabRestored(){},
+				onTabClosing: function tabMan_onTabClosing(){},
+				onTabSwitched: function tabMan_onTabSwitched(tab){},
+			};
 
 	window.FolderDisplayListenerManager.registerListener(listener);
-
 	listen(window, window, "unload", unload(function()
 	{
 		if ("FolderDisplayListenerManager" in window)
 			window.FolderDisplayListenerManager.unregisterListener(listener)
 	}), false);
-
-//	listener.selectMessageDelayed();
-
-	let tabmail = document.getElementById("tabmail"),
-			tabMon = {
-		monitorName: "aslmTabmon",
-		onTabOpened: function tabMan_onTabOpened(tab, aFirstTab, aOldTab)
-		{
-			if (tab.mode.name != "preferencesTab")
-				return;
-
-			if (tab.browser.contentWindow.___autoSLM)
-				return;
-
-			tab.browser.addEventListener("paneSelected", function runOnce (event)
-			{
-				tab.browser.removeEventListener("paneSelected", runOnce, false);
-				fixpref(tab.browser.contentWindow);
-			}, false);
-			tab.browser.contentWindow.___autoSLM = true;
-			unload(function()
-			{
-				delete tab.browser.contentWindow.___autoSLM;
-			});
-
-		},
-		onTabTitleChanged: function tabMan_onTabTitleChanged(){},
-		onTabPersist: function tabMan_onTabPersist(){},
-		onTabRestored: function tabMan_onTabRestored(){},
-		onTabClosing: function tabMan_onTabClosing(){},
-		onTabSwitched: function tabMan_onTabSwitched(tab){},
-	};
 
 	if (tabmail)
 	{
@@ -147,7 +140,7 @@ function main(window)
 		{
 			for(let i = 0; i < tabmail.tabTypes.preferencesTab.modes.preferencesTab.tabs.length; i++)
 			{
-				fixpref(tabmail.tabTypes.preferencesTab.modes.preferencesTab.tabs[i].browser.contentWindow);
+				prefWinLoaded(tabmail.tabTypes.preferencesTab.modes.preferencesTab.tabs[i].browser.contentWindow);
 			}
 		}
 		tabmail.registerTabMonitor(tabMon);
@@ -156,195 +149,9 @@ function main(window)
 			tabmail.unregisterTabMonitor(tabMon)
 		});
 	}
-
 } //main()
 
-function disableAll(obj, r, s)
-{
-	if (obj.hasAttribute && obj.hasAttribute("autoSLM"))
-		return true;
-
-	if (!s && obj.hasAttribute && obj.hasAttribute("autoSLM"))
-		s = true;
-
-	if (s || typeof(r) == "undefined")
-	{
-		if ("disabled" in obj && !("___autoSLM_disabled" in obj))
-		{
-			obj.___autoSLM_disabled = obj.disabled;
-		}
-		if (typeof(r) == "undefined")
-		{
-			obj.disabled = obj.___autoSLM_disabled;
-			delete obj.___autoSLM_disabled;
-		}
-		else
-		{
-			obj.disabled = r;
-		}
-	}
-	if (obj.childNodes.length)
-	{
-		for(let i = 0; i < obj.childNodes.length; i++)
-		{
-			let a = disableAll(obj.childNodes[i], r, s);
-			if (a)
-				s = a;
-		}
-	}
-}
-
-function prefString(pref, key, val)
-{
-	let r, er = [];
-	if (typeof(val) == "undefined")
-	{
-		try
-		{
-			r = pref.getComplexValue(key, Ci.nsISupportsString).data;
-		}
-		catch(e)
-		{
-			er.push(e);
-			try
-			{
-				r = pref.getStringPref(key);
-			}
-			catch(e)
-			{
-				er.push(e);
-				try
-				{
-					r = pref.getComplexValue(key, Ci.nsIPrefLocalizedString).data;
-				}
-				catch(e)
-				{
-					er.push(e);
-					try
-					{
-						r = pref.getCharPref(key);
-					}
-					catch(e)
-					{
-						er.push(e);
-						log(er);
-					}
-				}
-			}
-		}
-	}
-	else
-	{
-		try
-		{
-			let str = Cc["@mozilla.org/supports-string;1"].createInstance(Ci.nsISupportsString);
-			str.data = val;
-			r = pref.setComplexValue(key, Ci.nsISupportsString, str);
-		}
-		catch(e)
-		{
-			er.push(e);
-			try
-			{
-				r = pref.setStringPref(key,val);
-			}
-			catch(e)
-			{
-				er.push(e);
-				try
-				{
-					let str = Cc["@mozilla.org/pref-localizedstring;1"].createInstance(Ci.nsIPrefLocalizedString);
-					str.data = val;
-					r = pref.setComplexValue(key, Ci.nsIPrefLocalizedString, str);
-				}
-				catch(e)
-				{
-					er.push(e);
-					try
-					{
-						r = pref.setCharPref(key, val);
-					}
-					catch(e)
-					{
-						er.push(e);
-						log(er);
-					}
-				}
-			}
-		}
-	}
-	return r;
-}//prefString()
-
-function setDefaultPrefs(prefs, prefix)
-{
-	var prefix = prefix || "";
-	let p, name = "";
-	if (prefix)
-	{
-		p = prefs[prefix];
-		name = prefix + ".";
-	}
-	else
-	{
-		p = prefs;
-	}
-	let branch = Services.prefs.getDefaultBranch(PREF_BRANCH);
-	for (let key in p)
-	{
-		let val = p[key];
-		switch (typeof val)
-		{
-			case "boolean":
-				branch.setBoolPref(name + key, val);
-				val = pref.getBoolPref(name + key);
-				break;
-			case "number":
-				branch.setIntPref(name + key, val);
-				val = pref.getIntPref(name + key);
-				break;
-			case "string":
-				prefString(branch, name + key, val);
-				val = prefString(pref, name + key, val);
-				break;
-			case "object":
-				prefs[val] = setDefaultPrefs(prefs, key);
-				continue;
-				break;
-		}
-		if (prefix)
-			prefs[prefix][key] = val;
-		else
-			prefs[key] = val;
-	}
-	return prefs;
-}
-
-function onPrefChange(pref, aTopic, key)
-{
-	if(aTopic != "nsPref:changed" || typeof(prefs[key]) == "undefined")
-		return;
-
-	switch (pref.getPrefType(key))
-	{
-		case Ci.nsIPrefBranch.PREF_BOOL:
-			prefs[key] = pref.getBoolPref(key);
-			break;
-
-		case Ci.nsIPrefBranch.PREF_INT:
-			prefs[key] = pref.getIntPref(key);
-			break;
-
-		case Ci.nsIPrefBranch.PREF_STRING:
-			prefs[key] = prefString(pref, key);
-			break;
-		default:
-			return;
-	}
-//	Services.obs.notifyObservers(null, 'autoSLM_prefChanged', key);
-} //onPrefChange()
-
-function fixpref(window, r, s)
+function prefWinLoaded(window, r, s)
 {
 	let doc = window.document;
 	if (!doc)
@@ -355,99 +162,66 @@ function fixpref(window, r, s)
 	let startBox = doc.getElementById("mailnewsStartPageEnabled");
 	if (startBox)
 	{
-		function addElement(el, parent, type)
-		{
-			type = type || "appendChild";
-
-			if (type == "insertBefore")
-				parent.parentNode.insertBefore(el, parent);
-			else
-				parent[type](el);
-
-			listen(window, window, "unload", unload(function()
-			{
-				el.parentNode.removeChild(el);
-			}), false);
-		}
-
-		function prefChange(e, val)
-		{
-			if (e && (e.target.id != "autoSLM_sel" || e.attrName != "value"))
-				return;
-
-			if (e && "newValue" in e)
-				val = ~~e.newValue;
-			else
-				val = prefs.sel;
-
-			disableAll(startBox.parentNode.parentNode, val ? true : false);
-			try
-			{
-				doc.getElementById("autoSLM_focus").disabled = !val;
-			}
-			catch (e){}
-			try
-			{
-				doc.getElementById("autoSLM_selForce").disabled = !val;
-			}
-			catch (e){}
-		}
 
 		if (!r && !doc.getElementById("autoSLM_box"))
 		{
-			let h = startBox.parentNode.parentNode.clientHeight,
-					w = startBox.parentNode.parentNode.clientWidth,
-					checkbox = doc.createXULElement("checkbox"),
-					menupopup = doc.createXULElement("menupopup"),
-					menulist = doc.createXULElement("menulist"),
-					vbox = doc.createXULElement("vbox"),
-					hbox = doc.createXULElement("hbox"),
-					menuitem = doc.createXULElement("menuitem");
+			function prefChange(e, val)
+			{
+				if (e && (e.target.id != "autoSLM_sel" || e.attrName != "value"))
+					return;
 
-			vbox.id = "autoSLM_box";
-			vbox.setAttribute("autoSLM", '');
+				if (e && "newValue" in e)
+					val = ~~e.newValue;
+				else
+					val = prefs.sel;
 
-			menulist.id = "autoSLM_sel";
-			menulist.setAttribute("label", "Select first unread message only");
-			menulist.setAttribute("preference", PREF_BRANCH + "sel");
-			menulist.addEventListener("DOMAttrModified", prefChange, false);
-			menulist.value = prefs.sel;
-			hbox.setAttribute("flex", false);
-			menuitem.setAttribute("value", 0);
-			menuitem.setAttribute("label", "Default");
-			menupopup.appendChild(menuitem);
-			menuitem = doc.createXULElement("menuitem");
-			menuitem.setAttribute("value", 1);
-			menuitem.setAttribute("label", "Newest message");
-			menupopup.appendChild(menuitem);
-			menuitem = doc.createXULElement("menuitem");
-			menuitem.setAttribute("value", 2);
-			menuitem.setAttribute("label", "First unread message");
-			menupopup.appendChild(menuitem);
-			menulist.appendChild(menupopup);
-			hbox.appendChild(menulist);
+				disableAll(startBox.parentNode.parentNode, val ? true : false);
+				disableAll(doc.getElementById("autoSLM_box").firstChild, !val, undefined, true);
+			}
+			let tags = {
+					PREF_BRANCH: PREF_BRANCH
+				},
+				vbox = window.MozXULElement.parseXULToFragment(multiline(function(){/*
+<vbox id="autoSLM_box" autoSLM="">
+	<vbox>
+		<hbox flex="false">
+			<menulist id="autoSLM_sel"
+								preference="{PREF_BRANCH}sel"
+								autoSLM=""
+			>
+				<menupopup>
+					<menuitem value="0" label="Default"></menuitem>
+					<menuitem value="1" label="Newest message"></menuitem>
+					<menuitem value="2" label="First unread message"></menuitem>
+				</menupopup>
+			</menulist>
+			<checkbox id="autoSLM_selForce" label="Force" preference="{PREF_BRANCH}selForce"></checkbox>
+		</hbox>
+		<checkbox id="autoSLM_focus" label="Auto focus on messages list" preference="{PREF_BRANCH}focus"></checkbox>
+	</vbox>
+</vbox>
+*/			}).replace(/\{([a-zA-Z0-9-_.]+)\}/g, function(a,b){return b in tags ? tags[b] : a}));
 
-			checkbox.id = "autoSLM_selForce";
-			checkbox.setAttribute("label", "Force");
-			checkbox.setAttribute("tooltiptext", "TB remembers last selected message, force it to forget");
-			checkbox.setAttribute("preference", PREF_BRANCH + "selForce");
-			hbox.appendChild(checkbox);
-			vbox.appendChild(hbox);
-			checkbox = doc.createXULElement("checkbox");
-			checkbox.id = "autoSLM_focus";
-			checkbox.setAttribute("label", "Auto focus on messages list");
-			checkbox.setAttribute("preference", PREF_BRANCH + "focus");
-			vbox.appendChild(checkbox);
-
-			addElement(vbox, startBox.parentNode, "insertBefore");
+			startBox.parentNode.parentNode.insertBefore(vbox, startBox.parentNode);
+			vbox = doc.getElementById("autoSLM_box");
+			vbox.addEventListener("DOMAttrModified", prefChange, false);
+			listen(window, window, "unload", unload(function()
+			{
+				vbox.parentNode.removeChild(vbox);
+			}), false);
 
 			try
 			{
-				let p = [
-					{ id: "extensions.autoselectlatestmessage.sel", type: "int" },
-					{ id: "extensions.autoselectlatestmessage.selForce", type: "bool" },
-					{ id: "extensions.autoselectlatestmessage.focus", type: "bool" },
-				];
+				let p = [],
+						types = {
+							number: "int",
+							boolean: "bool",
+							string: "string"
+						};
+
+				for(let n in prefs)
+					p[p.length] = {id: PREF_BRANCH + n, type: types[typeof(prefs[n])]};
+
 				window.Preferences.addAll(p);
 				unload(function()
 				{
@@ -455,7 +229,7 @@ function fixpref(window, r, s)
 						delete window.Preferences._all[p[i].id];
 				});
 			}
-			catch(e){}
+			catch(e){log(e)}
 		}
 		prefChange()
 		if (!r)
@@ -465,27 +239,11 @@ function fixpref(window, r, s)
 			}), false);
 	}
 	else if (!s && doc.getElementById("paneGeneral"))
-		listen(window, doc.getElementById("paneGeneral"), "paneload", function() {fixpref(window, r, true)}, true);
-
-/*
-	function prefChanged(aSubject, aTopic, aData)
 	{
-		if (aTopic != "autoSLM_prefChanged")
-				return;
-
-log(prefs[aData], arguments);
+		let undo = listen(window, doc, "paneSelected", function() {prefWinLoaded(window, r, true);undo();}, true);
 	}
 
-	Services.obs.addObserver(prefChanged, "autoSLM_prefChanged", false);
-	let u = function()
-	{
-log("unloaded");
-		Services.obs.removeObserver(prefChanged, "autoSLM_prefChanged", false);
-	}
-	listen(window, window, "unload", u);
-	unload(u);
-*/
-} //fixpref()
+} //prefWinLoaded()
 
 function startup(data, reason)
 {
@@ -496,7 +254,7 @@ function startup(data, reason)
 		setDefaultPrefs(prefs);
 
 		watchWindows(main);
-		watchWindows(fixpref, "Mail:Preferences");
+		watchWindows(prefWinLoaded, "Mail:Preferences");
 		pref.QueryInterface(Ci.nsIPrefBranch).addObserver('', onPrefChange, false);
 		unload(function()
 		{
