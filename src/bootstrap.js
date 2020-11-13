@@ -57,21 +57,25 @@ function main(window)
 					if (obj.view.dbView && (!obj.view.dbView.numSelected || (obj.view.dbView.numSelected && !isTextbox && prefs.selForce)))
 					{
 
-						let msgDefault = (obj.view.isSortedAscending && obj.view.sortImpliesTemporalOrdering)
-															? Ci.nsMsgNavigationType.lastMessage
-															: Ci.nsMsgNavigationType.firstMessage;
+						let msgDefault = Ci.nsMsgNavigationType.firstMessage,
+								msgUnread = Ci.nsMsgNavigationType.firstUnreadMessage,
+								msg = msgDefault;
 
+						if (obj.view.isSortedAscending && obj.view.sortImpliesTemporalOrdering)
+						{
+							msgDefault = Ci.nsMsgNavigationType.lastMessage;
+//							msgUnread = Ci.nsMsgNavigationType.lastUnreadMessage; //doesn't work, bug?
+						}
 						switch(prefs.sel)
 						{
 							case 1:
 									msg = msgDefault;
-							default:
 								break;
 							case 2:
-									msg = Ci.nsMsgNavigationType.firstUnreadMessage;
+									msg = msgUnread;
+							default:
 								break;
 						}
-
 						if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
 							window.gFolderDisplay.navigate(msgDefault, /* select */ true)
 					}
@@ -195,7 +199,11 @@ function prefWinLoaded(window, r, s)
 					<menuitem value="2" label="First unread message"></menuitem>
 				</menupopup>
 			</menulist>
-			<checkbox id="autoSLM_selForce" label="Force" preference="{PREF_BRANCH}selForce"></checkbox>
+			<checkbox id="autoSLM_selForce"
+								label="Force"
+								preference="{PREF_BRANCH}selForce"
+								tooltiptext="Thunderbird remembers last selected message, force it to forget"
+			></checkbox>
 		</hbox>
 		<checkbox id="autoSLM_focus" label="Auto focus on messages list" preference="{PREF_BRANCH}focus"></checkbox>
 	</vbox>
