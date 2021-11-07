@@ -1,3 +1,5 @@
+
+//jshint -W083
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components,
 			PREF_BRANCH = "extensions.autoselectlatestmessage.";
 
@@ -18,7 +20,7 @@ function include(path)
 function main(window)
 {
 
-	if (!"FolderDisplayListenerManager" in window)
+	if (!("FolderDisplayListenerManager" in window))
 		return;
 
 	let document = window.document,
@@ -36,7 +38,7 @@ function main(window)
 
 					this.calls[this.calls.length] = arguments[arguments.length-1];
 					//the timer needed to allow time to restore previous selection if any
-					this.timer = setTimeout(function(){listener.selectMessage.apply(that, args)}, 0);
+					this.timer = setTimeout(e => (listener.selectMessage.apply(that, args)), 0);
 				},
 
 				selectMessage: function listener_selectMessage(obj)
@@ -45,7 +47,6 @@ function main(window)
 					this.calls = [];
 					if (!prefs.sel)
 						return;
-
 					let isTextbox = this.isTextbox(window.document.activeElement);
 
 					if (obj.view.dbView && (!obj.view.dbView.numSelected || (obj.view.dbView.numSelected && !isTextbox && prefs.selForce && calls.indexOf("onDisplayingFolder") != -1)))
@@ -67,18 +68,16 @@ function main(window)
 								break;
 							case 2:
 									msg = msgUnread;
+									break;
 							default:
 								break;
 						}
 						if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
-							window.gFolderDisplay.navigate(msgDefault, /* select */ true)
+							window.gFolderDisplay.navigate(msgDefault, /* select */ true);
 					}
 					if (prefs.focus && !isTextbox)
 					{
-						setTimeout(function()
-						{
-							obj.tree.focus()
-						}, 100);
+						setTimeout(e => (obj.tree.focus()), 100);
 					}
 				},
 
@@ -88,7 +87,7 @@ function main(window)
 						return false;
 
 					if (el.tagName && el.tagName.match(/(?:textbox|html:input)/i))
-						return true
+						return true;
 
 					return this.isTextbox(el.parentNode);
 				}
@@ -151,15 +150,15 @@ function main(window)
 				let args = Array.prototype.slice.call(arguments);
 				args[args.length] = name;
 				this.selectMessageDelayed.apply(this, args);
-			}
+			};
 		}
 		return true;
 	}.bind(listener)(),
 	window.FolderDisplayListenerManager.registerListener(listener);
-	listen(window, window, "unload", unload(function()
+	listen(window, window, "unload", unload(e =>
 	{
 		if ("FolderDisplayListenerManager" in window)
-			window.FolderDisplayListenerManager.unregisterListener(listener)
+			window.FolderDisplayListenerManager.unregisterListener(listener);
 	}), false);
 
 	if (tabmail)
@@ -167,15 +166,10 @@ function main(window)
 		if (tabmail.tabTypes.preferencesTab)
 		{
 			for(let i = 0; i < tabmail.tabTypes.preferencesTab.modes.preferencesTab.tabs.length; i++)
-			{
 				prefWinLoaded(tabmail.tabTypes.preferencesTab.modes.preferencesTab.tabs[i].browser.contentWindow);
-			}
 		}
 		tabmail.registerTabMonitor(tabMon);
-		unload(function()
-		{
-			tabmail.unregisterTabMonitor(tabMon)
-		});
+		unload(e => tabmail.unregisterTabMonitor(tabMon));
 	}
 } //main()
 
@@ -191,26 +185,26 @@ function prefWinLoaded(window, r, s)
 	if (startBox)
 	{
 
+		const prefChange = (e, val) =>
+		{
+			if (e && (e.target.id != "autoSLM_sel" || e.attrName != "value"))
+				return;
+
+			if (e && "newValue" in e)
+				val = ~~e.newValue;
+			else
+				val = prefs.sel;
+
+			disableAll(startBox.parentNode.parentNode, val ? true : false);
+			disableAll(doc.getElementById("autoSLM_box").firstChild, !val, undefined, true);
+		};
 		if (!r && !doc.getElementById("autoSLM_box"))
 		{
-			function prefChange(e, val)
-			{
-				if (e && (e.target.id != "autoSLM_sel" || e.attrName != "value"))
-					return;
-
-				if (e && "newValue" in e)
-					val = ~~e.newValue;
-				else
-					val = prefs.sel;
-
-				disableAll(startBox.parentNode.parentNode, val ? true : false);
-				disableAll(doc.getElementById("autoSLM_box").firstChild, !val, undefined, true);
-			}
 			let tags = {
 					PREF_BRANCH: PREF_BRANCH
 				},
-				vbox = window.MozXULElement.parseXULToFragment(multiline(function(){/*
-<vbox id="autoSLM_box" autoSLM="">
+				vbox = window.MozXULElement.parseXULToFragment(
+`<vbox id="autoSLM_box" autoSLM="">
 	<vbox>
 		<hbox flex="false">
 			<menulist id="autoSLM_sel"
@@ -231,16 +225,12 @@ function prefWinLoaded(window, r, s)
 		</hbox>
 		<checkbox id="autoSLM_focus" label="Auto focus on messages list" preference="{PREF_BRANCH}focus"></checkbox>
 	</vbox>
-</vbox>
-*/			}).replace(/\{([a-zA-Z0-9-_.]+)\}/g, function(a,b){return b in tags ? tags[b] : a}));
+</vbox>`.replace(/\{([a-zA-Z0-9-_.]+)\}/g, (a,b) => b in tags ? tags[b] : a));
 
 			startBox.parentNode.parentNode.insertBefore(vbox, startBox.parentNode);
 			vbox = doc.getElementById("autoSLM_box");
 			vbox.addEventListener("DOMAttrModified", prefChange, false);
-			listen(window, window, "unload", unload(function()
-			{
-				vbox.parentNode.removeChild(vbox);
-			}), false);
+			listen(window, window, "unload", unload(e => vbox.parentNode.removeChild(vbox)), false);
 
 			try
 			{
@@ -255,24 +245,21 @@ function prefWinLoaded(window, r, s)
 					p[p.length] = {id: PREF_BRANCH + n, type: types[typeof(prefs[n])]};
 
 				window.Preferences.addAll(p);
-				unload(function()
+				unload(e =>
 				{
 					for(let i = 0; i < p.length; i++)
 						delete window.Preferences._all[p[i].id];
 				});
 			}
-			catch(e){log(e)}
+			catch(e){log(e);}
 		}
-		prefChange()
+		prefChange();
 		if (!r)
-			listen(window, window, "unload", unload(function()
-			{
-				disableAll(startBox.parentNode.parentNode);
-			}), false);
+			listen(window, window, "unload", unload(e => disableAll(startBox.parentNode.parentNode)), false);
 	}
 	else if (!s && doc.getElementById("paneGeneral"))
 	{
-		let undo = listen(window, doc, "paneSelected", function() {prefWinLoaded(window, r, true);undo();}, true);
+		let undo = listen(window, doc, "paneSelected", e => (prefWinLoaded(window, r, true),undo()), true);
 	}
 
 } //prefWinLoaded()
@@ -288,10 +275,7 @@ function startup(data, reason)
 		watchWindows(main);
 		watchWindows(prefWinLoaded, "Mail:Preferences");
 		pref.QueryInterface(Ci.nsIPrefBranch).addObserver('', onPrefChange, false);
-		unload(function()
-		{
-			pref.QueryInterface(Ci.nsIPrefBranch).removeObserver('', onPrefChange, false);
-		});
+		unload(e => pref.QueryInterface(Ci.nsIPrefBranch).removeObserver('', onPrefChange, false));
 	};
 	let promise = AddonManager.getAddonByID(data.id, callback);
 	if (typeof(promise) == "object" && "then" in promise)
@@ -310,3 +294,4 @@ function install(data, reason)
 function uninstall(data, reason)
 {
 }
+

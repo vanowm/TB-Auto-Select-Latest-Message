@@ -81,7 +81,7 @@ function unload(callback, container) {
 
 	// Calling with no arguments runs all the unloader callbacks
 	if (callback == null) {
-		unloaders.slice().forEach(function(unloader) {return unloader()});
+		unloaders.slice().forEach(unloader => unloader());
 		unloaders.length = 0;
 		return;
 	}
@@ -97,7 +97,7 @@ function unload(callback, container) {
 			container.removeEventListener("unload", unloader, false);
 			removeUnloader();
 			origCallback();
-		}
+		};
 	}
 
 	// Wrap the callback in a function that ignores failures
@@ -129,7 +129,7 @@ function watchWindows(callback, type) {
 	if (typeof(type) == "undefined")
 		type = "mail:3pane";
 
-	unload(function(){unloaded = true});
+	unload(e => unloaded = true);
 
 	// Wrap the callback in a function that ignores failures
 	function watcher(window) {
@@ -140,7 +140,7 @@ function watchWindows(callback, type) {
 			if (documentElement.getAttribute("windowtype") == type)
 				callback(window);
 		}
-		catch(ex) {log(ex)}
+		catch(ex) {log(ex);}
 	}
 
 	// Wait for the window to finish loading before running the callback
@@ -173,7 +173,7 @@ function watchWindows(callback, type) {
 	Services.ww.registerNotification(windowWatcher);
 
 	// Make sure to stop watching for windows if we're unloading
-	unload(function(){Services.ww.unregisterNotification(windowWatcher)});
+	unload(e => Services.ww.unregisterNotification(windowWatcher));
 }
 
 function setTimeout(callback, time)
@@ -262,15 +262,3 @@ function disableAll(obj, r, s, f)
 			s = a;
 	}
 }
-
-function multiline(func, ws)
-{
-	func = func.toString();
-	func = func.slice(func.indexOf("/*") + 2, func.lastIndexOf("*/")).split("*//*").join("*/");
-	func = func.replace(/{SVG-([A-Z]+)}/g, function(a, b)
-	{
-		return SVG[b.toLowerCase()] || a;
-	});
-	return ws ? func : func.replace(/[\n\t]*/g, "");
-}
-
