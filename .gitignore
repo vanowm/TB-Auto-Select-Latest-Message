@@ -1,0 +1,4 @@
+*.xpi
+chrome.manifest
+install.rdf
+.main
