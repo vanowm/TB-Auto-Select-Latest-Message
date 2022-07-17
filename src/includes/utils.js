@@ -133,14 +133,14 @@ function watchWindows(callback, type) {
 
 	// Wrap the callback in a function that ignores failures
 	function watcher(window) {
-		try {
+		// try {
 			// Now that the window has loaded, only handle browser windows
 			let {documentElement} = window.document;
 //log([documentElement.getAttribute("windowtype"), type]);
 			if (documentElement.getAttribute("windowtype") == type)
 				callback(window);
-		}
-		catch(ex) {log(ex);}
+		// }
+		// catch(ex) {console.log(ex);}
 	}
 
 	// Wait for the window to finish loading before running the callback
@@ -176,10 +176,24 @@ function watchWindows(callback, type) {
 	unload(e => Services.ww.unregisterNotification(windowWatcher));
 }
 
+const timers = new Map();
+
+function clearTimeout(timer)
+{
+	if (timer && timer.cancel)
+		timer.cancel();
+
+	timers.delete(timer);
+}
 function setTimeout(callback, time)
 {
 	let timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-	timer.initWithCallback(callback, time, Ci.nsITimer.TYPE_ONE_SHOT);
+	timers.set(timer, callback);
+	timer.initWithCallback(() =>
+	{
+		clearTimeout(timer);
+		callback();
+	}, time, Ci.nsITimer.TYPE_ONE_SHOT);
 	return timer;
 }
 

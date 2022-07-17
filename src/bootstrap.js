@@ -3,14 +3,22 @@
 const {classes: Cc, interfaces: Ci, utils: Cu} = Components,
 			PREF_BRANCH = "extensions.autoselectlatestmessage.";
 
+const debug = (...args) => debug.log.apply(debug, args);
+Object.setPrototypeOf(debug, new Proxy(Function.prototype,
+{
+	get(target, prop)
+	{
+		const ret = ()=>{};//target[prop] || console[prop];
+		return ret.bind(ret);
+	}
+}));
 var self = this,
 		pref = Services.prefs.getBranch(PREF_BRANCH),
 		prefs = {
 			sel: 1,
 			selForce: false,
 			focus: true
-		},
-		log = console.log.bind(console);
+		};
 
 function include(path)
 {
@@ -19,44 +27,77 @@ function include(path)
 
 function main(window)
 {
+	// open console
+	// window.toJavaScriptConsole && window.toJavaScriptConsole();
 
 	if (!("FolderDisplayListenerManager" in window))
 		return;
 
 	let document = window.document,
-			listener =
-			{
+			listener = new Proxy({
+				events: { //list of events that will trigger selectImage()
+					onMakeActive: true,
+					// onMessagesLoaded: true,
+					onDisplayingFolder: true,
+					_SelectMessageStartup: true //fake custom function
+				},
 				timer: null,
-				calls: [],
-				selectMessageDelayed: function listener_selectMessageDelayed()
+				calls: new Map(),
+				selection: new Map(),
+				func: function()
 				{
-					if (this.timer)
-						this.timer.cancel();
-
-					let that = this,
+					let {that, prop} = this,
 							args = arguments;
 
-					this.calls[this.calls.length] = arguments[arguments.length-1];
-					//the timer needed to allow time to restore previous selection if any
-					this.timer = setTimeout(e => (listener.selectMessage.apply(that, args)), 0);
-				},
+					clearTimeout(that.timer);
 
-				selectMessage: function listener_selectMessage(obj)
+					that.calls.set(this.prop, args);
+debug("selectMessageDelayed: " + args, that);
+					//the timer needed to allow time to restore previous selection if any
+					that.timer = setTimeout(e => that.selectMessage.apply(that, args), 0);
+					// that.selectMessage.apply(that, args);
+					const tree = args[0].tree;
+					if (tree && !tree.___autoSLM)
+					{
+						tree.___autoSLM = true;
+						listen(tree, tree, "select", e =>
+						{
+							that.selection.set(tree.view.viewFolder.URI, tree.view.hdrForFirstSelectedMessage);
+						});
+						unload(() => delete tree.___autoSLM);
+					}
+				},
+				
+				selectMessage: function listener_selectMessage(tree)
 				{
-					let calls = Object.assign([], this.calls);
-					this.calls = [];
+debug("selectMessage: " + [...this.calls.keys()], tree.view.dbView);
+					// if (!this.calls.has("onMessagesLoaded"))
+					// 	return;
+
+					const isOnDisplayingFolder = this.calls.has("onDisplayingFolder");
+					this.calls.clear();
+
+					//remember last selection.
+					//smart folders don't work properly, after add/remove folders
+					if (!prefs.selForce && tree.view.dbView && !tree.view.dbView.numSelected && this.selection.has(tree.view.dbView.viewFolder.URI))
+					{
+						const hdr = this.selection.get(tree.view.dbView.viewFolder.URI);
+						const index = tree.view.dbView.findIndexOfMsgHdr(hdr, true);
+						if (index !== 0xFFFFFFFF)
+							tree.selectViewIndex(tree.view.dbView.findIndexOfMsgHdr(hdr, true));
+					}
 					if (!prefs.sel)
 						return;
-					let isTextbox = this.isTextbox(window.document.activeElement);
 
-					if (obj.view.dbView && (!obj.view.dbView.numSelected || (obj.view.dbView.numSelected && !isTextbox && prefs.selForce && calls.indexOf("onDisplayingFolder") != -1)))
+					const isTextbox = this.isTextbox(window.document.activeElement);
+
+					if (tree.view.dbView && (!tree.view.dbView.numSelected || (tree.view.dbView.numSelected && !isTextbox && prefs.selForce && isOnDisplayingFolder)))
 					{
-
 						let msgDefault = Ci.nsMsgNavigationType.firstMessage,
 								msgUnread = Ci.nsMsgNavigationType.firstUnreadMessage,
 								msg = msgDefault;
 
-						if (obj.view.isSortedAscending && obj.view.sortImpliesTemporalOrdering)
+						if (tree.view.isSortedAscending && tree.view.sortImpliesTemporalOrdering)
 						{
 							msgDefault = Ci.nsMsgNavigationType.lastMessage;
 //							msgUnread = Ci.nsMsgNavigationType.lastUnreadMessage; //doesn't work, bug?
@@ -65,19 +106,19 @@ function main(window)
 						{
 							case 1:
 									msg = msgDefault;
-								break;
+									break;
 							case 2:
 									msg = msgUnread;
 									break;
 							default:
 								break;
 						}
-						if (!window.gFolderDisplay.navigate(msg, /* select */ true) && msg != msgDefault)
-							window.gFolderDisplay.navigate(msgDefault, /* select */ true);
+						if (!window.gFolderDisplay.navigate(msg, true /* select */) && msg != msgDefault)
+							window.gFolderDisplay.navigate(msgDefault, true /* select */);
 					}
 					if (prefs.focus && !isTextbox)
 					{
-						setTimeout(e => (obj.tree.focus()), 100);
+						setTimeout(e => (tree.tree.focus()), 100);
 					}
 				},
 
@@ -91,21 +132,31 @@ function main(window)
 
 					return this.isTextbox(el.parentNode);
 				}
-			}, //listener
+			},
+			{
+				get(target, prop)
+				{
+					return target.func.bind({that: target, prop});
+				},
+				has(target, prop)
+				{
+					// return true;
+					return target.events.hasOwnProperty(prop);
+				}
+			}), //listener
 
 			tabmail = document.getElementById("tabmail"),
-			tabMon =
-			{
-				monitorName: "aslmTabmon",
-				onTabOpened: function tabMan_onTabOpened(tab, aFirstTab, aOldTab)
+			tabMon = new Proxy({
+				onTabOpened: (tab, aFirstTab, aOldTab) =>
 				{
+					debug("tabMon: "+this, arguments);
 					if (tab.mode.name != "preferencesTab")
 						return;
 
 					if (tab.browser.contentWindow.___autoSLM)
 						return;
 
-					tab.browser.addEventListener("paneSelected", function runOnce (event)
+					listen(tab.browser, tab.browser, "paneSelected", function runOnce (event)
 					{
 						tab.browser.removeEventListener("paneSelected", runOnce, false);
 						prefWinLoaded(tab.browser.contentWindow);
@@ -115,52 +166,25 @@ function main(window)
 					{
 						delete tab.browser.contentWindow.___autoSLM;
 					});
-
 				},
-				onTabTitleChanged: function tabMan_onTabTitleChanged(){},
-				onTabPersist: function tabMan_onTabPersist(){},
-				onTabRestored: function tabMan_onTabRestored(){},
-				onTabClosing: function tabMan_onTabClosing(){},
-				onTabSwitched: function tabMan_onTabSwitched(tab){},
-			};
-	!function()
-	{
-		let listenerEvents = [
-//					"onActiveCreatedView",
-//					"onActiveMessagesLoaded",
-//					"onCreatedView",
-//					"onDestroyingView",
-					"onDisplayingFolder",
-//					"onFolderLoading",
-//					"onLeavingFolder",
-//					"onLoadingFolder",
-					"onMakeActive",
-//					"onMessageCountsChanged",
-//					"onMessagesLoaded",
-//					"onMessagesRemovalFailed",
-//					"onMessagesRemoved",
-//					"onSearching",
-//					"onSortChanged",
-		];
-		for (let i = 0; i < listenerEvents.length; i++)
-		{
-			let name = listenerEvents[i];
-			this[name] = function()
+				blank: function(){debug("tabMon: "+this, arguments);}
+			},
 			{
-				let args = Array.prototype.slice.call(arguments);
-				args[args.length] = name;
-				this.selectMessageDelayed.apply(this, args);
-			};
-		}
-		return true;
-	}.bind(listener)(),
+				get(target, prop)
+				{
+					return (target[prop] || target.blank).bind(prop);
+				},
+			});
+
 	window.FolderDisplayListenerManager.registerListener(listener);
+
 	listen(window, window, "unload", unload(e =>
 	{
 		if ("FolderDisplayListenerManager" in window)
 			window.FolderDisplayListenerManager.unregisterListener(listener);
 	}), false);
 
+	listener._SelectMessageStartup(window.gFolderDisplay);
 	if (tabmail)
 	{
 		if (tabmail.tabTypes.preferencesTab)
@@ -175,30 +199,33 @@ function main(window)
 
 function prefWinLoaded(window, r, s)
 {
-	let doc = window.document;
-	if (!doc)
+	let document = window.document;
+	if (!document || !window.MozXULElement)
 		return;
+
+debug("prefWinLoaded", document.readyState);
+	if (document.readyState != "complete")
+		return setTimeout(e => prefWinLoaded(window, r, s));
 
 	r =  r ? true : false;
 
-	let startBox = doc.getElementById("mailnewsStartPageEnabled");
+	let startBox = document.getElementById("mailnewsStartPageEnabled");
 	if (startBox)
 	{
 
 		const prefChange = (e, val) =>
 		{
-			if (e && (e.target.id != "autoSLM_sel" || e.attrName != "value"))
-				return;
+			const target = e && e[0].target;
 
-			if (e && "newValue" in e)
-				val = ~~e.newValue;
+			if (target)
+				val = ~~target.value;
 			else
 				val = prefs.sel;
 
 			disableAll(startBox.parentNode.parentNode, val ? true : false);
-			disableAll(doc.getElementById("autoSLM_box").firstChild, !val, undefined, true);
+			disableAll(document.getElementById("autoSLM_box").firstChild, !val, undefined, true);
 		};
-		if (!r && !doc.getElementById("autoSLM_box"))
+		if (!r && !document.getElementById("autoSLM_box"))
 		{
 			let tags = {
 					PREF_BRANCH: PREF_BRANCH
@@ -228,9 +255,18 @@ function prefWinLoaded(window, r, s)
 </vbox>`.replace(/\{([a-zA-Z0-9-_.]+)\}/g, (a,b) => b in tags ? tags[b] : a));
 
 			startBox.parentNode.parentNode.insertBefore(vbox, startBox.parentNode);
-			vbox = doc.getElementById("autoSLM_box");
-			vbox.addEventListener("DOMAttrModified", prefChange, false);
-			listen(window, window, "unload", unload(e => vbox.parentNode.removeChild(vbox)), false);
+			vbox = document.getElementById("autoSLM_box");
+			const observer = new window.MutationObserver(prefChange);
+			observer.observe(vbox, {
+				attributes: true,
+				attributeFilter: ["value"],
+				subtree: true,
+			});
+			listen(window, window, "unload", unload(e =>
+			{
+				vbox.parentNode.removeChild(vbox);
+				observer.disconnect();
+			}), false);
 
 			try
 			{
@@ -251,15 +287,15 @@ function prefWinLoaded(window, r, s)
 						delete window.Preferences._all[p[i].id];
 				});
 			}
-			catch(e){log(e);}
+			catch(e){debug(e);}
 		}
 		prefChange();
 		if (!r)
 			listen(window, window, "unload", unload(e => disableAll(startBox.parentNode.parentNode)), false);
 	}
-	else if (!s && doc.getElementById("paneGeneral"))
+	else if (!s && document.getElementById("paneGeneral"))
 	{
-		let undo = listen(window, doc, "paneSelected", e => (prefWinLoaded(window, r, true),undo()), true);
+		let undo = listen(window, document, "paneSelected", e => (prefWinLoaded(window, r, true),undo()), true);
 	}
 
 } //prefWinLoaded()
@@ -274,6 +310,7 @@ function startup(data, reason)
 
 		watchWindows(main);
 		watchWindows(prefWinLoaded, "Mail:Preferences");
+		watchWindows(prefWinLoaded, "about:preferences");
 		pref.QueryInterface(Ci.nsIPrefBranch).addObserver('', onPrefChange, false);
 		unload(e => pref.QueryInterface(Ci.nsIPrefBranch).removeObserver('', onPrefChange, false));
 	};
