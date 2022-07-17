@@ -4,7 +4,7 @@
 		"gecko": {
 			"id": "autoselectlatestmessage@vano",
 			"strict_min_version": "70.0",
-			"strict_max_version": "104.*"
+			"strict_max_version": "104.0"
 		}
 	},
 	"name": "Auto Select Latest Message",
