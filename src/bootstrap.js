@@ -8,7 +8,10 @@ Object.setPrototypeOf(debug, new Proxy(Function.prototype,
 {
 	get(target, prop)
 	{
-		const ret = ()=>{};//target[prop] || console[prop];
+		if (!debug.isTemp)
+			return ()=>{};
+
+		const ret = target[prop] || console[prop];
 		return ret.bind(ret);
 	}
 }));
@@ -37,7 +40,7 @@ function main(window)
 			listener = new Proxy({
 				events: { //list of events that will trigger selectImage()
 					onMakeActive: true,
-					// onMessagesLoaded: true,
+					onMessagesLoaded: true,
 					onDisplayingFolder: true,
 					_SelectMessageStartup: true //fake custom function
 				},
@@ -46,23 +49,25 @@ function main(window)
 				selection: new Map(),
 				func: function()
 				{
-					let {that, prop} = this,
-							args = arguments;
+					const {that, prop} = this,
+								args = arguments,
+								tree = args[0] && args[0].tree;
 
 					clearTimeout(that.timer);
 
-					that.calls.set(this.prop, args);
-debug("selectMessageDelayed: " + args, that);
+					that.calls.set(prop, args);
+debug("selectMessageDelayed:", prop, args, that);
 					//the timer needed to allow time to restore previous selection if any
-					that.timer = setTimeout(e => that.selectMessage.apply(that, args), 0);
+					that.timer = setTimeout(e => that.selectMessage.apply(that, args), 10);
 					// that.selectMessage.apply(that, args);
-					const tree = args[0].tree;
 					if (tree && !tree.___autoSLM)
 					{
 						tree.___autoSLM = true;
 						listen(tree, tree, "select", e =>
 						{
 							that.selection.set(tree.view.viewFolder.URI, tree.view.hdrForFirstSelectedMessage);
+							clearTimeout(that.timer);
+							debug("selected", tree.view.viewFolder.URI, tree.view.hdrForFirstSelectedMessage);
 						});
 						unload(() => delete tree.___autoSLM);
 					}
@@ -70,21 +75,25 @@ debug("selectMessageDelayed: " + args, that);
 				
 				selectMessage: function listener_selectMessage(tree)
 				{
-debug("selectMessage: " + [...this.calls.keys()], tree.view.dbView);
-					// if (!this.calls.has("onMessagesLoaded"))
-					// 	return;
+					if (!tree._allMessagesLoaded)
+						return;
 
-					const isOnDisplayingFolder = this.calls.has("onDisplayingFolder");
+					debug("selectMessage: " + [...this.calls.keys()], tree.view.dbView);
+					const isOnDisplayingFolder = this.calls.has("onDisplayingFolder"),
+								isStartup = this.calls.has("_SelectMessageStartup");
+
 					this.calls.clear();
 
 					//remember last selection.
-					//smart folders don't work properly, after add/remove folders
 					if (!prefs.selForce && tree.view.dbView && !tree.view.dbView.numSelected && this.selection.has(tree.view.dbView.viewFolder.URI))
 					{
 						const hdr = this.selection.get(tree.view.dbView.viewFolder.URI);
-						const index = tree.view.dbView.findIndexOfMsgHdr(hdr, true);
-						if (index !== 0xFFFFFFFF)
-							tree.selectViewIndex(tree.view.dbView.findIndexOfMsgHdr(hdr, true));
+						if (hdr)
+						{
+							const index = tree.view.dbView.findIndexOfMsgHdr(hdr, true);
+							if (index !== 0xFFFFFFFF)
+								tree.selectViewIndex(tree.view.dbView.findIndexOfMsgHdr(hdr, true));
+						}
 					}
 					if (!prefs.sel)
 						return;
@@ -114,11 +123,25 @@ debug("selectMessage: " + [...this.calls.keys()], tree.view.dbView);
 								break;
 						}
 						if (!window.gFolderDisplay.navigate(msg, true /* select */) && msg != msgDefault)
-							window.gFolderDisplay.navigate(msgDefault, true /* select */);
+							window.gFolderDisplay.navigate(msgDefault, true /* select */); 
 					}
-					if (prefs.focus && !isTextbox)
+					if ((prefs.focus || isStartup) && !isTextbox)
 					{
-						setTimeout(e => (tree.tree.focus()), 100);
+						const listener = {
+							onMessagesLoaded: tree =>
+							{
+								tree.tree.focus();
+								if (window.gLastFocusedElement === tree.tree)
+								{
+									debug("focused", "isStartup", isStartup, "force focus", prefs.focus);
+									window.FolderDisplayListenerManager.unregisterListener(listener);
+								}
+							}
+						};
+						if (tree._allMessagesLoaded)
+							listener.onMessagesLoaded(tree);
+						else
+							window.FolderDisplayListenerManager.registerListener(listener);
 					}
 				},
 
@@ -176,12 +199,11 @@ debug("selectMessage: " + [...this.calls.keys()], tree.view.dbView);
 				},
 			});
 
-	window.FolderDisplayListenerManager.registerListener(listener);
-
+	const FolderDisplayListenerManager = window.FolderDisplayListenerManager;
+	FolderDisplayListenerManager.registerListener(listener);
 	listen(window, window, "unload", unload(e =>
 	{
-		if ("FolderDisplayListenerManager" in window)
-			window.FolderDisplayListenerManager.unregisterListener(listener);
+		FolderDisplayListenerManager.unregisterListener(listener);
 	}), false);
 
 	listener._SelectMessageStartup(window.gFolderDisplay);
@@ -250,7 +272,7 @@ debug("prefWinLoaded", document.readyState);
 								tooltiptext="Thunderbird remembers last selected message, force it to forget"
 			></checkbox>
 		</hbox>
-		<checkbox id="autoSLM_focus" label="Auto focus on messages list" preference="{PREF_BRANCH}focus"></checkbox>
+		<checkbox id="autoSLM_focus" label="Auto focus on messages list" preference="{PREF_BRANCH}focus" tooltiptext="When folder changed, automatically focus to message list"></checkbox>
 	</vbox>
 </vbox>`.replace(/\{([a-zA-Z0-9-_.]+)\}/g, (a,b) => b in tags ? tags[b] : a));
 
@@ -302,6 +324,8 @@ debug("prefWinLoaded", document.readyState);
 
 function startup(data, reason)
 {
+	//data.temporarilyInstalled is a getter, cache the value
+	debug.isTemp = data.temporarilyInstalled;
 	let callback = function callback(a)
 	{
 		addon = a;

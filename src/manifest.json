@@ -1,5 +1,9 @@
 {
 	"manifest_version": 2,
+	"name": "Auto Select Latest Message",
+	"author": "V@no",
+	"description": "Automatically select and display latest message on startup or when switching folder for the first time",
+	"version": "3.2.1",
 	"applications": {
 		"gecko": {
 			"id": "autoselectlatestmessage@vano",
@@ -7,10 +11,6 @@
 			"strict_max_version": "104.0"
 		}
 	},
-	"name": "Auto Select Latest Message",
-	"author": "V@no",
-	"description": "Automatically select and display latest message on startup or when switching folder for the first time",
-	"version": "3.2.0",
 	"experiment_apis": {
 		"BootstrapLoader": {
 			"schema": "api/BootstrapLoader/schema.json",

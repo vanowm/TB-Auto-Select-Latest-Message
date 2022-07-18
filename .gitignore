@@ -1,6 +1,2 @@
+.vscode
 *.xpi
-chrome.manifest
-install.rdf
-.main
-.vscode/Auto Select Latest Message.code-workspace
-.vscode/settings.json
