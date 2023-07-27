@@ -35,7 +35,7 @@ async function init() {
     }
 
     async function searchMessage(folder, options) {
-        // Neither both not none may be selected.
+        // Neither both nor none may be selected.
         if (
             (!options.newest && !options.unread) ||
             (options.newest && options.unread)
