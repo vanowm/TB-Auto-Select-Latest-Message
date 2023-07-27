@@ -1,0 +1,18 @@
+[
+  {
+    "namespace": "ScrollToView",
+    "functions": [
+      {
+        "name": "scroll",
+        "type": "function",
+        "async": true,
+        "parameters": [
+          {
+            "name": "tabId",
+            "type": "integer"
+          }
+        ]
+      }
+    ]
+  }
+]
