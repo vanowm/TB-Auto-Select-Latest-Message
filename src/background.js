@@ -17,20 +17,20 @@ async function init() {
         // The value is null if it is the default, so we always pull the new value.
         prefs[name] = await messenger.LegacyPrefs.getPref(`${PREF_BRANCH}${name}`);
     }, PREF_BRANCH);
-    
+
 
     // Generator function to walk through message lists more easily.
     async function* listMessages(folder) {
         let page = await messenger.messages.list(folder);
         for (let message of page.messages) {
-        yield message;
-        }
-    
-        while (page.id) {
-        page = await messenger.messages.continueList(page.id);
-        for (let message of page.messages) {
             yield message;
         }
+
+        while (page.id) {
+            page = await messenger.messages.continueList(page.id);
+            for (let message of page.messages) {
+                yield message;
+            }
         }
     }
 
@@ -39,10 +39,10 @@ async function init() {
         if (
             (!options.newest && !options.unread) ||
             (options.newest && options.unread)
-         ) {
+        ) {
             return null;
         }
-        
+
         let messages = listMessages(folder);
         let newestMsg;
         for await (let message of messages) {
