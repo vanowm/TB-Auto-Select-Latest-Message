@@ -1,2 +1,32 @@
-.vscode
+dist/*
+node_modules/*
 *.xpi
+*.zip
+yarn.lock
+
+# Local credentials and private keys
+.env
+.env.*
+!.env.example
+!.env.sample
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+
+# Thunderbird profiles and account data
+profiles/
+smoke-profile-*/
+Mail/
+ImapMail/
+logins.json
+key3.db
+key4.db
+cert9.db
+prefs.js
+user.js
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

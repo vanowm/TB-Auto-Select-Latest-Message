@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto Select Latest Message settings</title>
+  <link rel="stylesheet" href="options.css">
+  <script src="settings.js" defer></script>
+  <script src="options.js" defer></script>
+</head>
+<body>
+  <h1>Auto Select Latest Message</h1>
+  <p>Select a message when opening a folder or starting Thunderbird.</p>
+  <form id="settings">
+    <label for="sel">Automatically select</label>
+    <select id="sel" name="sel">
+      <option value="0">Default Thunderbird behavior</option>
+      <option value="1">Newest message</option>
+      <option value="2">First unread message</option>
+    </select>
+    <p>First unread follows the order in the message list. If there are no unread messages, the newest message is selected.</p>
+    <fieldset id="selection-options">
+      <label><input id="selForce" name="selForce" type="checkbox"> Override Thunderbird’s remembered selection when opening a folder</label>
+      <label><input id="focus" name="focus" type="checkbox"> Focus the message list after opening a folder</label>
+    </fieldset>
+    <button type="submit">Save settings</button>
+    <p id="status" role="status" aria-live="polite"></p>
+  </form>
+</body>
+</html>

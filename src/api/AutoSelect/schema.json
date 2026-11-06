@@ -1,0 +1,179 @@
+[
+	{
+		"events": [
+			{
+				"name": "onUserInteraction",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"name": "onSettingsChanged",
+				"parameters": [
+					{
+						"name": "settings",
+						"properties": {
+							"focus": {
+								"type": "boolean"
+							},
+							"sel": {
+								"maximum": 2,
+								"minimum": 0,
+								"type": "integer"
+							},
+							"selForce": {
+								"type": "boolean"
+							}
+						},
+						"type": "object"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"description": "A watched mail tab has completed loading its messages.",
+				"name": "onViewLoaded",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"description": "Retry deferred selection after a startup dialog closes.",
+				"name": "onWindowClosed",
+				"parameters": [],
+				"type": "function"
+			}
+		],
+		"functions": [
+			{
+				"async": true,
+				"name": "setSettings",
+				"parameters": [
+					{
+						"name": "settings",
+						"properties": {
+							"focus": {
+								"type": "boolean"
+							},
+							"sel": {
+								"maximum": 2,
+								"minimum": 0,
+								"type": "integer"
+							},
+							"selForce": {
+								"type": "boolean"
+							}
+						},
+						"type": "object"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "cancelScan",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "getRememberedMessage",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "selectMessage",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					},
+					{
+						"name": "message",
+						"properties": {
+							"generation": {
+								"type": "integer"
+							},
+							"id": {
+								"type": "integer"
+							},
+							"interactionVersion": {
+								"type": "integer"
+							},
+							"viewToken": {
+								"type": "integer"
+							}
+						},
+						"type": "object"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "getLegacyPreferences",
+				"parameters": [],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "getViewState",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "findMessage",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					},
+					{
+						"maximum": 2,
+						"minimum": 1,
+						"name": "mode",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			},
+			{
+				"async": true,
+				"name": "focusMessageList",
+				"parameters": [
+					{
+						"name": "tabId",
+						"type": "integer"
+					}
+				],
+				"type": "function"
+			}
+		],
+		"namespace": "AutoSelect"
+	}
+]

@@ -1,0 +1,54 @@
+:root
+{
+	color-scheme: light dark;
+	font: menu;
+}
+
+body
+{
+	max-width: 42rem;
+	padding: 0 1.5rem;
+	margin: 2rem auto;
+}
+
+h1
+{
+	font-size: 1.6rem;
+}
+
+p
+{
+	line-height: 1.5;
+}
+
+select
+{
+	display: block;
+	padding: .4rem;
+	margin-top: .5rem;
+	font: inherit;
+}
+
+fieldset
+{
+	padding: 0;
+	border: 0;
+	margin: 1.5rem 0;
+}
+
+fieldset label
+{
+	display: block;
+	margin: 1rem 0;
+}
+
+button
+{
+	padding: .5rem 1rem;
+	font: inherit;
+}
+
+#status
+{
+	min-height: 1.5em;
+}

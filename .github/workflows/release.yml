@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+    paths:
+      - "src/**"
+      - "scripts/**"
+      - "schemas/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".eslintrc.js"
+      - ".stylelintrc.js"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate release version and entry points
+        id: metadata
+        run: node scripts/release.cjs metadata
+
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft); then
+            if [ "$state" = false ]; then
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              echo "Release $TAG is already published; leaving it unchanged."
+            fi
+          fi
+
+      - name: Install locked development tools
+        if: steps.existing.outputs.published != 'true'
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check code and formatting
+        if: steps.existing.outputs.published != 'true'
+        run: npm run lint
+
+      - name: Build and checksum the XPI
+        if: steps.existing.outputs.published != 'true'
+        run: |
+          npm run build
+          node scripts/release.cjs verify
+
+      - name: Publish the GitHub release
+        if: steps.existing.outputs.published != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          ASSET: ${{ steps.metadata.outputs.asset }}
+          CHECKSUM: ${{ steps.metadata.outputs.checksum }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --target "$COMMIT" --title "$VERSION" --generate-notes --draft
+          fi
+          gh release upload "$TAG" "$ASSET" "$CHECKSUM" --clobber
+          gh release edit "$TAG" --draft=false --latest
