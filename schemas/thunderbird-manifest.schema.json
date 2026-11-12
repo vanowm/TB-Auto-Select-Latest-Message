@@ -1,0 +1,91 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"additionalProperties": false,
+	"description": "Public Thunderbird MailExtension manifest fields used by this add-on. Experimental APIs are not accepted.",
+	"properties": {
+		"author": {
+			"type": "string"
+		},
+		"background": {
+			"additionalProperties": false,
+			"properties": {
+				"scripts": {
+					"items": {
+						"minLength": 1,
+						"type": "string"
+					},
+					"minItems": 1,
+					"type": "array"
+				}
+			},
+			"required": ["scripts"],
+			"type": "object"
+		},
+		"browser_specific_settings": {
+			"additionalProperties": false,
+			"properties": {
+				"gecko": {
+					"additionalProperties": false,
+					"properties": {
+						"id": {
+							"minLength": 1,
+							"type": "string"
+						},
+						"strict_max_version": {
+							"type": "string"
+						},
+						"strict_min_version": {
+							"type": "string"
+						}
+					},
+					"type": "object"
+				}
+			},
+			"type": "object"
+		},
+		"description": {
+			"maxLength": 132,
+			"type": "string"
+		},
+		"manifest_version": {
+			"const": 2
+		},
+		"name": {
+			"maxLength": 75,
+			"minLength": 1,
+			"type": "string"
+		},
+		"options_ui": {
+			"additionalProperties": false,
+			"properties": {
+				"open_in_tab": {
+					"type": "boolean"
+				},
+				"page": {
+					"minLength": 1,
+					"type": "string"
+				}
+			},
+			"required": ["page"],
+			"type": "object"
+		},
+		"permissions": {
+			"items": {
+				"type": "string"
+			},
+			"type": "array",
+			"uniqueItems": true
+		},
+		"version": {
+			"pattern": "^\\d{2}\\.[1-9]\\d?\\.[1-9]\\d?\\.(0|[1-9]\\d{0,3})$",
+			"type": "string"
+		}
+	},
+	"required": [
+		"manifest_version",
+		"name",
+		"version"
+	],
+	"title": "Auto Select Latest Message Thunderbird manifest",
+	"type": "object"
+}

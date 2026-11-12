@@ -1,0 +1,47 @@
+{
+	"devDependencies": {
+		"eslint": "8.57.1",
+		"eslint-plugin-css": "0.12.0",
+		"eslint-plugin-css-custom-properties": "1.1.0",
+		"eslint-plugin-eslint-comments": "3.2.0",
+		"eslint-plugin-import": "2.32.0",
+		"eslint-plugin-json-schema-validator": "5.4.0",
+		"eslint-plugin-jsonc": "2.20.1",
+		"eslint-plugin-prefer-arrow-functions": "3.4.2",
+		"eslint-plugin-promise": "6.6.0",
+		"eslint-plugin-sonarjs": "0.25.1",
+		"eslint-plugin-unicorn": "48.0.1",
+		"espree": "9.3.2",
+		"jsonc-eslint-parser": "2.4.0",
+		"postcss": "8.4.14",
+		"relaxed-json": "^1.0.3",
+		"stylelint": "15.11.0",
+		"stylelint-config-idiomatic-order": "10.0.0",
+		"stylelint-config-standard": "34.0.0",
+		"stylelint-group-selectors": "1.0.10",
+		"web-ext": "7.1.1"
+	},
+	"license": "GPL-3",
+	"name": "auto-select-latest-message",
+	"scripts": {
+		"atn:check": "node scripts/check-atn.cjs",
+		"build": "web-ext build --filename auto-select-latest-message-{version}.xpi",
+		"format": "node scripts/format.cjs",
+		"format:check": "node scripts/format.cjs --check",
+		"lint": "node scripts/format.cjs --lint",
+		"prebuild": "npm run privacy:check",
+		"privacy:check": "node scripts/privacy.cjs",
+		"release:check": "node scripts/release.cjs metadata",
+		"test": "node --test tests/addon.test.cjs tests/privacy.test.cjs tests/atn.test.cjs",
+		"test:thunderbird": "node tests/thunderbird-smoke.cjs"
+	},
+	"version": "26.11.12.1007",
+	"webExt": {
+		"artifactsDir": "dist/",
+		"build": {
+			"asNeeded": false,
+			"overwriteDest": true
+		},
+		"sourceDir": "src/"
+	}
+}
