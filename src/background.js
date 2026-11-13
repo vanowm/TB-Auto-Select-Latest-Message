@@ -18,10 +18,32 @@ const resumeDeferred = async () =>
 const report = error => console.error("Auto Select Latest Message:", error);
 
 messenger.mailTabs.onDisplayedFolderChanged.addListener((tab, folder) => select(tab.id, folder));
-messenger.mailTabs.onSelectedMessagesChanged.addListener((tab, selected) =>
+messenger.mailTabs.onSelectedMessagesChanged.addListener(async (tab, selected) =>
 {
-	controller.selectionChanged(tab.id, selected.messages, tab.displayedFolder, Boolean(selected.id));
-	if (selected.id) messenger.messages.abortList(selected.id).catch(report);
+	try
+	{
+		let folder = tab.displayedFolder;
+		if (!folder && !controller.requests.has(tab.id))
+		{
+			try
+			{
+				const currentTab = await messenger.mailTabs.get(tab.id);
+				folder = currentTab.displayedFolder;
+			}
+			catch
+			{
+				// The tab can close before its final selection event is delivered.
+				return;
+			}
+		}
+		// Pending selections must receive manual input immediately, before any
+		// asynchronous tab lookup could let the current scan finish.
+		controller.selectionChanged(tab.id, selected.messages, folder, Boolean(selected.id));
+	}
+	finally
+	{
+		if (selected.id) await messenger.messages.abortList(selected.id).catch(report);
+	}
 });
 messenger.tabs.onCreated.addListener(tab =>
 {
@@ -34,6 +56,10 @@ messenger.windows.onFocusChanged.addListener(windowId =>
 	if (windowId !== messenger.windows.WINDOW_ID_NONE) resumeDeferred().catch(report);
 });
 messenger.windows.onRemoved.addListener(() => resumeDeferred().catch(report));
+messenger.folders?.onFolderInfoChanged?.addListener(() =>
+{
+	if (controller.deferred.size > 0) resumeDeferred().catch(report);
+});
 messenger.storage.onChanged.addListener((changes, area) =>
 {
 	if (area === "local" && changes.settings)

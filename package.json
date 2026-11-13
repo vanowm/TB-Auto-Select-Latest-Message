@@ -35,7 +35,7 @@
 		"test": "node --test tests/addon.test.cjs tests/privacy.test.cjs tests/atn.test.cjs",
 		"test:thunderbird": "node tests/thunderbird-smoke.cjs"
 	},
-	"version": "26.11.12.1007",
+	"version": "26.11.12.2044",
 	"webExt": {
 		"artifactsDir": "dist/",
 		"build": {

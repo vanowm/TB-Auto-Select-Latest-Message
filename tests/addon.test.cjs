@@ -10,6 +10,7 @@ const evaluate = (file, expression, globals = {}) => vm.runInNewContext(fs.readF
 const Controller = evaluate("selection.js", "AutoSelectController");
 const folder = { id: "account://Inbox" };
 const otherFolder = { id: "account://Other" };
+const unifiedFolder = { id: "unified:/Inbox", isUnified: true, isVirtual: true };
 const selectedListId = "selected-list";
 const message = (id, date, read = true) =>
 {
@@ -27,7 +28,7 @@ const deferred = () =>
 
 const fixture = (options = {}) =>
 {
-	const calls = { selected: [], listed: 0, continued: [], aborted: [], waits: [], tabs: 0 };
+	const calls = { selected: [], listed: 0, continued: [], aborted: [], waits: [], tabs: 0, listOptions: [], counts: 0 };
 	let preferences = { sel: 1, selForce: false, ...options.settings };
 	let displayedFolder = folder;
 	let selected = options.selected || [];
@@ -48,11 +49,12 @@ const fixture = (options = {}) =>
 			{
 				return { messages: selected };
 			},
-			getListedMessages: async () =>
+			getListedMessages: async (tabId, listOptions) =>
 			{
 				calls.listed++;
+				calls.listOptions.push(listOptions);
 				pageIndex = 0;
-				return options.list ? options.list(calls.listed) : page(0);
+				return options.list ? options.list(calls.listed, listOptions) : page(0);
 			},
 			setSelectedMessages: async (tabId, ids) =>
 			{
@@ -73,6 +75,15 @@ const fixture = (options = {}) =>
 			abortList: async id => calls.aborted.push(id),
 		},
 	};
+	if (options.browserVersion) api.runtime = { getBrowserInfo: async () =>
+	{
+		return { version: options.browserVersion };
+	} };
+	if (options.count !== undefined) api.folders = { getFolderInfo: async () =>
+	{
+		calls.counts++;
+		return { totalMessageCount: typeof options.count === "function" ? options.count() : options.count };
+	} };
 	const controller = new Controller(api, () => preferences, async ms =>
 	{
 		calls.waits.push(ms);
@@ -492,10 +503,300 @@ test("cancelAll clears deferred and active work without forgetting selections", 
 	assert.deepEqual([...f.controller.memory.get(2).get(folder.id)], [7]);
 });
 
+test("a transient clear during the first unified list retries instead of losing selection", async () =>
+{
+	const initial = deferred();
+	const f = fixture({ list: attempt => (attempt === 1 ? initial.promise : { id: null, messages: [message(2, 90)] }) });
+	f.setFolder(unifiedFolder);
+	const pending = f.controller.select(1, unifiedFolder);
+	await waitFor(() => f.calls.listed === 1);
+	f.choose([]);
+	initial.resolve({ id: null, messages: [message(1, 10)] });
+	await pending;
+	assert.deepEqual(f.calls.selected, [[1, 2]]);
+	assert.ok(f.calls.listed >= 2);
+});
+
+test("an empty event before entering a new unified folder is not remembered as manual deselection", async () =>
+{
+	const f = fixture();
+	f.controller.selectionChanged(1, [], unifiedFolder);
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 2]]);
+});
+
+test("a transient unified clear during pagination restarts a fresh list", async () =>
+{
+	const next = deferred();
+	const f = fixture({ pages: [[message(1, 10)], []], next: () => next.promise });
+	f.setFolder(unifiedFolder);
+	const pending = f.controller.select(1, unifiedFolder);
+	await waitFor(() => f.calls.continued.length > 0);
+	f.choose([]);
+	next.resolve({ id: null, messages: [message(2, 90)] });
+	await pending;
+	assert.deepEqual(f.calls.selected, [[1, 2]]);
+	assert.ok(f.calls.listed >= 2);
+});
+
+test("a same-folder unified view rebuild can populate without a new folder event", async () =>
+{
+	let rebuilt = false;
+	const f = fixture({
+		list: () =>
+		{
+			return { id: null, messages: rebuilt ? [message(2, 90)] : [] };
+		},
+		delay: ms =>
+		{
+			if (ms === 250 && f.calls.listed === 2)
+			{
+				f.choose([]);
+				rebuilt = true;
+			}
+		},
+	});
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 2]]);
+	assert.equal(f.controller.deferred.size, 0);
+});
+
+test("later account results refine only the add-on's initial unified selection", async () =>
+{
+	const f = fixture({ pages: [[message(1, 10)]], delay: ms =>
+	{
+		if (ms === 250) f.setPages([[message(1, 10), message(2, 90)]]);
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1], [1, 2]]);
+	assert.equal(f.calls.waits.reduce((sum, ms) => sum + ms, 0), 30_100);
+});
+
+test("virtual refinement never takes ownership of a preexisting native selection", async () =>
+{
+	const f = fixture({ selected: [{ id: 7 }] });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.equal(f.calls.listed, 0);
+	assert.deepEqual(f.calls.waits, [100]);
+});
+
+test("virtual refinement preserves an explicitly remembered message", async () =>
+{
+	const f = fixture();
+	f.setFolder(unifiedFolder);
+	f.controller.selectionChanged(1, [{ id: 1 }], unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1]]);
+	assert.deepEqual(f.calls.waits, [100]);
+});
+
+test("a different manual selection stops unified refinement", async () =>
+{
+	const f = fixture({ pages: [[message(1, 10)]], delay: ms =>
+	{
+		if (ms === 250)
+		{
+			f.choose([7]);
+			f.setPages([[message(2, 90)]]);
+		}
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1]]);
+	assert.deepEqual([...f.controller.memory.get(1).get(unifiedFolder.id)], [7]);
+});
+
+test("a stable manual clear in a populated unified view stops refinement", async () =>
+{
+	const f = fixture({ pages: [[message(1, 10)]], delay: ms =>
+	{
+		if (ms === 250) f.choose([]);
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1]]);
+	assert.deepEqual([...f.controller.memory.get(1).get(unifiedFolder.id)], []);
+});
+
+test("an owned unified selection survives an empty rebuild with unchanged folder counts", async () =>
+{
+	const f = fixture({ count: 10, pages: [[message(1, 10)]], delay: ms =>
+	{
+		if (ms === 250)
+		{
+			f.setPages([[]]);
+			f.choose([]);
+		}
+		if (ms === 500) f.setPages([[message(2, 90)]]);
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1], [1, 2]]);
+});
+
+test("a unified rebuild invalidates a late page from an owned refinement", async () =>
+{
+	const stale = deferred();
+	let rebuilding = false;
+	const f = fixture({
+		list: attempt =>
+		{
+			if (attempt === 1) return { id: null, messages: [message(1, 10)] };
+			if (attempt === 2) return { id: "old-view", messages: [message(1, 10)] };
+			return { id: null, messages: rebuilding ? [] : [message(3, 100)] };
+		},
+		next: () => stale.promise,
+		delay: ms =>
+		{
+			if (ms === 500) rebuilding = false;
+		},
+	});
+	f.setFolder(unifiedFolder);
+	const pending = f.controller.select(1, unifiedFolder);
+	await waitFor(() => f.calls.continued.length > 0);
+	rebuilding = true;
+	f.choose([]);
+	stale.resolve({ id: null, messages: [message(2, 90)] });
+	await pending;
+	assert.deepEqual(f.calls.selected, [[1, 1], [1, 3]]);
+});
+
+for (const change of ["folder", "settings", "tab"])
+{
+	test(`a ${change} change cancels an owned unified refinement`, async () =>
+	{
+		const f = fixture({ pages: [[message(1, 10)]], delay: ms =>
+		{
+			if (ms !== 250) return;
+			if (change === "folder") f.setFolder(otherFolder);
+			if (change === "settings") f.setSettings({ sel: 0, selForce: false });
+			if (change === "tab") f.controller.remove(1);
+			f.setPages([[message(2, 90)]]);
+		} });
+		f.setFolder(unifiedFolder);
+		await f.controller.select(1, unifiedFolder);
+		assert.deepEqual(f.calls.selected, [[1, 1]]);
+	});
+}
+
+test("a view empty at the clear event stays a loading clear when rows return before confirmation", async () =>
+{
+	const f = fixture({ pages: [[message(1, 10)]], delay: ms =>
+	{
+		if (ms === 250)
+		{
+			f.setPages([[]]);
+			f.choose([]);
+		}
+		if (ms === 100 && f.calls.selected.length > 0) f.setPages([[message(2, 90)]]);
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1], [1, 2]]);
+});
+
+test("display marking the owned first unread read does not advance through unread messages", async () =>
+{
+	const f = fixture({ settings: { sel: 2 }, pages: [[message(1, 10, false), message(2, 20, false)]], delay: ms =>
+	{
+		if (ms === 250) f.setPages([[message(1, 10, true), message(2, 20, false)]]);
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1]]);
+});
+
+test("a newly loaded unread earlier in view order refines the owned unread selection", async () =>
+{
+	const f = fixture({ settings: { sel: 2 }, pages: [[message(1, 10, false)]], delay: ms =>
+	{
+		if (ms === 250) f.setPages([[message(2, 20, false), message(1, 10, true)]]);
+		if (ms === 500) f.setPages([[message(2, 20, true), message(1, 10, true), message(3, 30, false)]]);
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1], [1, 2]]);
+});
+
+test("unchanged folder counts limit large-view rescans but still make safety passes", async () =>
+{
+	const f = fixture({ count: 100_000 });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.equal(f.calls.listed, 3);
+	assert.deepEqual(f.calls.selected, [[1, 2]]);
+});
+
+test("changed virtual folder counts trigger refinement before the safety passes", async () =>
+{
+	let count = 1;
+	const f = fixture({ count: () => count, pages: [[message(1, 10)]], delay: ms =>
+	{
+		if (ms === 250)
+		{
+			count = 2;
+			f.setPages([[message(1, 10), message(2, 90)]]);
+		}
+	} });
+	f.setFolder(unifiedFolder);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 1], [1, 2]]);
+	assert.equal(f.calls.listed, 4);
+});
+
+for (const browserVersion of ["128.0", "147.0", "148.0", "159.0"])
+{
+	test(`newest sorted-list capability is gated for Thunderbird ${browserVersion}`, async () =>
+	{
+		const f = fixture({ browserVersion, pages: [[message(2, 90)], [message(1, 10)]] });
+		await f.controller.select(1, folder);
+		assert.deepEqual(f.calls.selected, [[1, 2]]);
+		if (Number.parseInt(browserVersion, 10) >= 148)
+		{
+			assert.equal(f.calls.listOptions[0].sortType, "date");
+			assert.equal(f.calls.listOptions[0].sortOrder, "descending");
+			assert.equal(f.calls.continued.length, 0);
+			assert.deepEqual(f.calls.aborted, ["listed"]);
+		}
+		else
+		{
+			assert.equal(f.calls.listOptions[0], undefined);
+			assert.equal(f.calls.continued.length, 1);
+		}
+	});
+}
+
+test("first unread keeps UI order even when sorted newest listings are supported", async () =>
+{
+	const f = fixture({ browserVersion: "159.0", settings: { sel: 2 }, pages: [[message(1, 10, false), message(2, 90, false)]] });
+	await f.controller.select(1, folder);
+	assert.deepEqual(f.calls.selected, [[1, 1]]);
+	assert.equal(f.calls.listOptions[0], undefined);
+});
+
+test("a rejected sorted-list request falls back to comparing all ordinary pages", async () =>
+{
+	const f = fixture({ browserVersion: "159.0", list: (attempt, options) =>
+	{
+		if (options) throw new Error("sort unavailable");
+		return { id: "fallback-list", messages: [message(1, 10)] };
+	}, next: () =>
+	{
+		return { id: null, messages: [message(2, 90)] };
+	} });
+	await f.controller.select(1, folder);
+	assert.deepEqual(f.calls.selected, [[1, 2]]);
+	assert.equal(f.calls.continued.length, 1);
+});
+
 const backgroundFixture = (stored, failure) =>
 {
 	const listeners = new Map();
-	const calls = { selected: [], writes: [], resumes: 0, cancellations: 0 };
+	const calls = { selected: [], writes: [], resumes: 0, cancellations: 0, selectionEvents: [], aborted: [] };
 	const event = name =>
 	{
 		return { addListener: listener => listeners.set(name, listener) };
@@ -505,8 +806,14 @@ const backgroundFixture = (stored, failure) =>
 			onDisplayedFolderChanged: event("folder"),
 			onSelectedMessagesChanged: event("selection"),
 			query: async () => [{ id: 1, displayedFolder: folder }],
+			get: async () =>
+			{
+				return { id: 1, displayedFolder: folder };
+			},
 		},
+		messages: { abortList: async id => calls.aborted.push(id) },
 		tabs: { onCreated: event("created"), onRemoved: event("removed"), onActivated: event("activated") },
+		folders: { onFolderInfoChanged: event("folderInfo") },
 		windows: { onFocusChanged: event("focus"), onRemoved: event("windowRemoved"), WINDOW_ID_NONE: -1 },
 		storage: {
 			onChanged: event("settings"),
@@ -526,6 +833,11 @@ const backgroundFixture = (stored, failure) =>
 	};
 	class BackgroundController
 	{
+		constructor ()
+		{
+			this.deferred = new Map();
+			this.requests = new Map();
+		}
 		select (tabId, displayedFolder)
 		{
 			calls.selected.push([tabId, displayedFolder]);
@@ -538,19 +850,22 @@ const backgroundFixture = (stored, failure) =>
 		{
 			calls.cancellations++;
 		}
-		selectionChanged () {}
+		selectionChanged (...values)
+		{
+			calls.selectionEvents.push(values);
+		}
 		remove () {}
 	}
-	const context = evaluate("background.js", "({ ready, getSettings: () => settings })", {
+	const context = evaluate("background.js", "({ ready, controller, getSettings: () => settings })", {
 		messenger: api, AutoSelectController: BackgroundController, ASLMSettings: evaluate("settings.js", "ASLMSettings"),
 	});
-	return { ...context, calls, listeners };
+	return { ...context, calls, listeners, api };
 };
 
 test("public background registers lifecycle events and starts restored tabs", async () =>
 {
 	const f = backgroundFixture({ sel: 2, selForce: true, focus: false });
-	assert.deepEqual([...f.listeners.keys()].sort(), ["activated", "created", "focus", "folder", "removed", "selection", "settings", "windowRemoved"]);
+	assert.deepEqual([...f.listeners.keys()].sort(), ["activated", "created", "focus", "folder", "folderInfo", "removed", "selection", "settings", "windowRemoved"]);
 	await f.ready;
 	await waitFor(() => f.calls.selected.length > 0);
 	assert.equal(f.getSettings().sel, 2);
@@ -585,4 +900,64 @@ test("public background retries deferred startup on activation and window events
 	f.listeners.get("settings")({ settings: { newValue: { sel: 0 } } }, "local");
 	assert.equal(f.getSettings().sel, 0);
 	assert.equal(f.calls.cancellations, 1);
+});
+
+test("folder count events wake only deferred empty startup views", async () =>
+{
+	const f = backgroundFixture({ sel: 1 });
+	await f.ready;
+	f.listeners.get("folderInfo")();
+	await Promise.resolve();
+	assert.equal(f.calls.resumes, 0);
+	f.controller.deferred.set(1, unifiedFolder);
+	f.listeners.get("folderInfo")();
+	await waitFor(() => f.calls.resumes === 1);
+});
+
+test("a standard-tab empty event resolves the new folder before remembering deselection", async () =>
+{
+	const f = fixture();
+	await f.controller.select(1, folder);
+	const background = backgroundFixture({ sel: 1 });
+	await background.ready;
+	background.controller.requests = f.controller.requests;
+	background.controller.selectionChanged = (...values) => f.controller.selectionChanged(...values);
+	background.api.mailTabs.get = f.api.mailTabs.get;
+	f.setFolder(unifiedFolder);
+	f.setSelected([]);
+	await background.listeners.get("selection")({ id: 1 }, { messages: [] });
+	assert.deepEqual([...f.controller.memory.get(1).get(folder.id)], [2]);
+	assert.equal(f.controller.memory.get(1).has(unifiedFolder.id), false);
+	await f.controller.select(1, unifiedFolder);
+	assert.deepEqual(f.calls.selected, [[1, 2], [1, 2]]);
+});
+
+test("a missing tab during selection lookup is ignored and its list is released", async () =>
+{
+	const f = backgroundFixture({ sel: 1 });
+	await f.ready;
+	f.api.mailTabs.get = async () =>
+	{
+		throw new Error("tab closed");
+	};
+	await f.listeners.get("selection")({ id: 7 }, { id: selectedListId, messages: [] });
+	assert.equal(f.calls.selectionEvents.length, 0);
+	assert.deepEqual(f.calls.aborted, [selectedListId]);
+});
+
+test("a pending request receives manual selection events before an asynchronous lookup", async () =>
+{
+	const f = backgroundFixture({ sel: 1 });
+	await f.ready;
+	f.controller.requests.set(1, {});
+	let lookups = 0;
+	f.api.mailTabs.get = async () =>
+	{
+		lookups++;
+		return { id: 1, displayedFolder: folder };
+	};
+	const pending = f.listeners.get("selection")({ id: 1 }, { messages: [{ id: 7 }] });
+	assert.equal(f.calls.selectionEvents.length, 1);
+	assert.equal(lookups, 0);
+	await pending;
 });

@@ -15,6 +15,7 @@ The package is capped at `161.*`, a maximum accepted by [ATN's registered applic
 - Optionally override remembered selections when opening a folder.
 - Respect manual selections and cancel pending work when the folder, selection, or settings change.
 - Read the displayed message list, including unified folders, without experimental APIs.
+- Retry unified views that temporarily clear while loading and refine automatic selections as results arrive from other accounts.
 
 ## Installation
 
@@ -39,7 +40,9 @@ Folder-selection memory lasts for the current session. **Override remembered sel
 
 Thunderbird's public APIs do not expose its General settings page or keyboard focus in the message list. Those integrations remain on `Beta`.
 
-Selection uses the messages exposed by the displayed list. Expand collapsed threads to make all their messages available. In views that cannot use the newest-message shortcut, finding the newest message reads all result pages; large unified folders can take longer. The public APIs also do not provide the native loading, password-dialog, or input events used by Beta, so those cases use bounded retries and resume on tab or window activation.
+Selection uses the messages exposed by the displayed list. Expand collapsed threads to make all their messages available. Thunderbird 148 and later can return date-sorted results without changing your view's sort order; older versions compare all result pages when needed, so large unified folders can take longer.
+
+Unified views recheck the add-on's own selection on a 30-second retry schedule as account results arrive. Folder counts avoid unnecessary full scans, and manual selections take priority. API processing time adds to that schedule. The public APIs do not expose the native loading, password-dialog, or input events used by Beta; empty views use bounded retries and resume on folder-info changes or tab/window activation.
 
 ## Development
 

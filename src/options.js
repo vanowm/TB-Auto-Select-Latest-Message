@@ -1,5 +1,7 @@
 "use strict";
 
+document.getElementById("version").textContent = `Version ${messenger.runtime.getManifest().version}`;
+
 const form = document.getElementById("settings");
 const statusMessage = document.getElementById("status");
 const selection = document.getElementById("sel");
